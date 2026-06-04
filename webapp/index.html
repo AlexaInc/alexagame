@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Reward Center</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-bg: var(--tg-theme-bg-color, #0e1621);
+            --tg-text: var(--tg-theme-text-color, #ffffff);
+            --tg-hint: var(--tg-theme-hint-color, #708499);
+            --tg-link: var(--tg-theme-link-color, #2481cc);
+            --tg-button: var(--tg-theme-button-color, #2481cc);
+            --tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+            --tg-secondary: var(--tg-theme-secondary-bg-color, #17212b);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-bg);
+            color: var(--tg-text);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .header h1 { font-size: 20px; margin: 0; }
+        .header p { font-size: 13px; color: var(--tg-hint); margin: 5px 0 0; }
+
+        /* Ad Slots Placeholder */
+        .ad-slot {
+            width: 100%;
+            min-height: 100px;
+            background: var(--tg-secondary);
+            border-radius: 10px;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
+        }
+
+        .ad-label {
+            font-size: 10px;
+            color: var(--tg-hint);
+            position: absolute;
+            background: rgba(0,0,0,0.3);
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+
+        .main-card {
+            width: 100%;
+            background: var(--tg-secondary);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            margin-top: 10px;
+        }
+
+        .timer-display {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--tg-button);
+            margin: 15px 0;
+        }
+
+        .progress-container {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--tg-button);
+            width: 0%;
+            transition: width 1s linear;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        #start-btn {
+            background-color: var(--tg-button);
+            color: var(--tg-button-text);
+        }
+
+        #claim-btn {
+            background-color: #31b545;
+            color: white;
+            display: none;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Responsive Ad sizing */
+        #banner-1 { height: 60px; }
+        #banner-2 { height: 250px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>💎 Reward Center</h1>
+        <p>Stay on this page to verify and earn</p>
+    </div>
+
+    <!-- TOP AD BANNER -->
+    <div class="ad-slot" id="banner-1">
+        <span class="ad-label">Advertisement</span>
+        <!-- PASTE YOUR TOP BANNER SCRIPT HERE -->
+    </div>
+
+    <div class="main-card">
+        <div id="status-text">Click the button below to start the 30-second verification.</div>
+        
+        <div id="timer-ui" style="display: none;">
+            <div class="timer-display" id="sec">30</div>
+            <div class="progress-container">
+                <div id="progress" class="progress-fill"></div>
+            </div>
+            <p style="font-size: 12px; color: var(--tg-hint);">Verification in progress... Please view the ads below.</p>
+        </div>
+
+        <button id="start-btn" class="btn" onclick="startVerification()">🚀 Start Verification</button>
+        <button id="claim-btn" class="btn" onclick="claim()">🎁 Claim $3000</button>
+    </div>
+
+    <!-- LARGE NATIVE AD / RECTANGLE AD -->
+    <div class="ad-slot" id="banner-2">
+        <span class="ad-label">Advertisement</span>
+        <!-- PASTE YOUR MAIN AD SCRIPT HERE -->
+    </div>
+
+    <!-- FOOTER AD -->
+    <div class="ad-slot" style="height: 100px;">
+        <span class="ad-label">Advertisement</span>
+        <!-- PASTE ANOTHER AD SCRIPT HERE -->
+    </div>
+
+    <script>
+        const webapp = window.Telegram.WebApp;
+        webapp.expand();
+
+        let timeLeft = 30;
+        let timerStarted = false;
+
+        function startVerification() {
+            if (timerStarted) return;
+            timerStarted = true;
+
+            document.getElementById('start-btn').style.display = 'none';
+            document.getElementById('status-text').style.display = 'none';
+            document.getElementById('timer-ui').style.display = 'block';
+
+            const countdown = setInterval(() => {
+                timeLeft--;
+                document.getElementById('sec').innerText = timeLeft;
+                
+                const progress = ((30 - timeLeft) / 30) * 100;
+                document.getElementById('progress').style.width = progress + '%';
+
+                if (timeLeft <= 0) {
+                    clearInterval(countdown);
+                    document.getElementById('timer-ui').style.display = 'none';
+                    document.getElementById('claim-btn').style.display = 'block';
+                    
+                    if (webapp.HapticFeedback) {
+                        webapp.HapticFeedback.notificationOccurred('success');
+                    }
+                }
+            }, 1000);
+        }
+
+        function claim() {
+            webapp.sendData("verified_daily_ad_high");
+            webapp.close();
+        }
+    </script>
+
+    <!-- Paste your Ad Provider's Auto-Ad or Global Script here if they have one -->
+    <!-- Example: <script src="https://adprovider.com/script.js"></script> -->
+
+</body>
+</html>
