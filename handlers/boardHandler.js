@@ -1,129 +1,177 @@
 const { Api } = require("telegram");
 const User = require('../models/User');
 const sessions = require('../games/sessions');
+const leveling = require('../utils/leveling');
+const { editMsg } = require('../utils/editMsg');
+const { getName } = require('../utils/getName');
+
+function buildGrid(gameId, game, prefix) {
+    const rows = [];
+    for (let r = 0; r < 8; r++) {
+        const row = [];
+        for (let c = 0; c < 8; c++) {
+            row.push(new Api.KeyboardButtonCallback({
+                text: game.cellEmoji(r, c),
+                data: Buffer.from(`${prefix}|${gameId}|${r}|${c}`)
+            }));
+        }
+        rows.push(row);
+    }
+    rows.push([
+        new Api.KeyboardButtonCallback({ text: "Surrender", data: Buffer.from(`${prefix}sr|${gameId}`) })
+    ]);
+    return rows;
+}
+
+function boardText(game, type) {
+    const pot = game.bet * 2;
+    const p1 = game.getName(game.players[0]);
+    const p2 = game.getName(game.players[1]);
+    const turnName = game.getName(game.players[game.turn]);
+    if (type === 'xox') {
+        return `❌⭕ <b>TIC-TAC-TOE (8×8)</b> | Pot: $${pot}\n${p1} (❌) vs ${p2} (⭕)\n\n▶️ ${turnName}'s turn — get 4 in a row!`;
+    } else {
+        return `🔴🟡 <b>CONNECT FOUR (8×8)</b> | Pot: $${pot}\n${p1} (🔴) vs ${p2} (🟡)\n\n▶️ ${turnName}'s turn — pieces drop down!`;
+    }
+}
+
+async function alertUser(client, queryId, text) {
+    try {
+        await client.invoke(new Api.messages.SetBotCallbackAnswer({ queryId, message: text, alert: true, cacheTime: 1 }));
+    } catch (e) {}
+}
+
+async function ack(client, queryId) {
+    try {
+        await client.invoke(new Api.messages.SetBotCallbackAnswer({ queryId, cacheTime: 1 }));
+    } catch (e) {}
+}
 
 const handleBoardCallback = async (client, update) => {
     const data = update.data.toString();
     const userId = update.userId.toString();
-    const parts = data.split("_");
-    const gameType = parts[0]; // xox or c4
-    const action = parts[1];
-    const gameId = parts.slice(2).join("_");
 
-    const game = sessions.get(gameId);
-    if (!game && action !== "join") return;
-
-    // --- JOIN LOGIC ---
-    if (action === 'join') {
-        const id = data.replace(`${gameType}_join_`, "");
-        const g = sessions.get(id);
-        if (!g || g.status !== 'lobby' || g.players.includes(userId)) return;
-
-        const user = await User.findOne({ userId });
-        if (user.wallet < g.bet) return;
-
+    // ── XOX Join ──
+    if (data.startsWith("xjoin|")) {
+        const gameId = data.replace("xjoin|", "");
+        const g = sessions.get(gameId);
+        if (!g || g.status !== 'lobby' || g.players.includes(userId)) return await ack(client, update.queryId);
+        let user = await User.findOne({ userId }) || await User.create({ userId });
+        if (user.wallet < g.bet) { await alertUser(client, update.queryId, "Insufficient funds!"); return; }
+        if (g._lobbyTimer) { clearTimeout(g._lobbyTimer); g._lobbyTimer = null; }
         g.addPlayer(userId);
-        await updateBoard(client, update.peer, update.msgId, g, id, gameType);
+        for (const pid of g.players) g.setName(pid, await getName(client, pid));
+        for (const pid of g.players) {
+            let u = await User.findOne({ userId: pid }) || await User.create({ userId: pid });
+            u.wallet -= g.bet; await u.save();
+        }
+        await editMsg(client, update.peer, update.msgId, boardText(g, 'xox'), buildGrid(gameId, g, 'xm'));
+        await ack(client, update.queryId);
         return;
     }
 
-    // --- MOVE LOGIC (XOX) ---
-    if (gameType === 'xox' && action === 'move') {
-        const index = parseInt(parts[2]);
-        const actualGameId = parts.slice(3).join("_");
-        const xoxGame = sessions.get(actualGameId);
-        
-        if (xoxGame && xoxGame.makeMove(userId, index)) {
-            const winner = xoxGame.checkWinner();
-            if (winner) {
-                await handleEndGame(client, update.peer, update.msgId, xoxGame, winner, actualGameId);
-            } else {
-                await updateBoard(client, update.peer, update.msgId, xoxGame, actualGameId, 'xox');
-            }
+    // ── C4 Join ──
+    if (data.startsWith("cjoin|")) {
+        const gameId = data.replace("cjoin|", "");
+        const g = sessions.get(gameId);
+        if (!g || g.status !== 'lobby' || g.players.includes(userId)) return await ack(client, update.queryId);
+        let user = await User.findOne({ userId }) || await User.create({ userId });
+        if (user.wallet < g.bet) { await alertUser(client, update.queryId, "Insufficient funds!"); return; }
+        if (g._lobbyTimer) { clearTimeout(g._lobbyTimer); g._lobbyTimer = null; }
+        g.addPlayer(userId);
+        for (const pid of g.players) g.setName(pid, await getName(client, pid));
+        for (const pid of g.players) {
+            let u = await User.findOne({ userId: pid }) || await User.create({ userId: pid });
+            u.wallet -= g.bet; await u.save();
         }
+        await editMsg(client, update.peer, update.msgId, boardText(g, 'c4'), buildGrid(gameId, g, 'cm'));
+        await ack(client, update.queryId);
+        return;
     }
 
-    // --- MOVE LOGIC (C4) ---
-    if (gameType === 'c4' && action === 'move') {
-        const col = parseInt(parts[2]);
-        const actualGameId = parts.slice(3).join("_");
-        const c4Game = sessions.get(actualGameId);
+    // ── XOX Surrender ──
+    if (data.startsWith("xmsr|")) {
+        const gameId = data.split("|")[1];
+        const game = sessions.get(gameId);
+        if (!game || game.status !== 'playing' || !game.players.includes(userId)) return await ack(client, update.queryId);
+        const winner = game.players.find(id => id !== userId);
+        await handleEndGame(client, update.peer, update.msgId, game, winner, gameId, 'xox', true);
+        await ack(client, update.queryId);
+        return;
+    }
 
-        if (c4Game && c4Game.makeMove(userId, col)) {
-            const winner = c4Game.checkWinner();
-            if (winner) {
-                await handleEndGame(client, update.peer, update.msgId, c4Game, winner, actualGameId);
-            } else {
-                await updateBoard(client, update.peer, update.msgId, c4Game, actualGameId, 'c4');
-            }
-        }
+    // ── C4 Surrender ──
+    if (data.startsWith("cmsr|")) {
+        const gameId = data.split("|")[1];
+        const game = sessions.get(gameId);
+        if (!game || game.status !== 'playing' || !game.players.includes(userId)) return await ack(client, update.queryId);
+        const winner = game.players.find(id => id !== userId);
+        await handleEndGame(client, update.peer, update.msgId, game, winner, gameId, 'c4', true);
+        await ack(client, update.queryId);
+        return;
+    }
+
+    // ── XOX Cell Click ──
+    if (data.startsWith("xm|")) {
+        const parts = data.split("|");
+        const gameId = parts[1];
+        const r = parseInt(parts[2]), c = parseInt(parts[3]);
+        const game = sessions.get(gameId);
+        if (!game || game.status !== 'playing') return await ack(client, update.queryId);
+        if (!game.players.includes(userId)) { await ack(client, update.queryId); return; }
+        if (game.players[game.turn] !== userId) { await alertUser(client, update.queryId, "Not your turn!"); return; }
+        if (game.board[r][c] !== null) { await alertUser(client, update.queryId, "Cell already taken!"); return; }
+        if (!game.makeMove(userId, r, c)) return;
+        const winner = game.checkWinner();
+        if (winner) { await handleEndGame(client, update.peer, update.msgId, game, winner, gameId, 'xox', false); await ack(client, update.queryId); return; }
+        await editMsg(client, update.peer, update.msgId, boardText(game, 'xox'), buildGrid(gameId, game, 'xm'));
+        await ack(client, update.queryId);
+        return;
+    }
+
+    // ── C4 Cell Click — user taps any cell in column, piece drops to bottom ──
+    if (data.startsWith("cm|")) {
+        const parts = data.split("|");
+        const gameId = parts[1];
+        const col = parseInt(parts[3]); // use column only, ignore row
+        const game = sessions.get(gameId);
+        if (!game || game.status !== 'playing') return await ack(client, update.queryId);
+        if (!game.players.includes(userId)) { await ack(client, update.queryId); return; }
+        if (game.players[game.turn] !== userId) { await alertUser(client, update.queryId, "Not your turn!"); return; }
+        if (!game.makeMove(userId, col)) { await alertUser(client, update.queryId, "Column is full!"); return; }
+        const winner = game.checkWinner();
+        if (winner) { await handleEndGame(client, update.peer, update.msgId, game, winner, gameId, 'c4', false); await ack(client, update.queryId); return; }
+        await editMsg(client, update.peer, update.msgId, boardText(game, 'c4'), buildGrid(gameId, game, 'cm'));
+        await ack(client, update.queryId);
+        return;
     }
 };
 
-async function updateBoard(client, peer, msgId, game, gameId, type) {
-    let buttons = [];
-    let message = "";
-
-    if (type === 'xox') {
-        message = `❌⭕ **TIC-TAC-TOE**\nBet: $${game.bet}\n\nTurn: [${game.players[game.turn]}](tg://user?id=${game.players[game.turn]})`;
-        for (let i = 0; i < 3; i++) {
-            let row = [];
-            for (let j = 0; j < 3; j++) {
-                const idx = i * 3 + j;
-                row.push(Api.KeyboardButtonCallback({ text: game.board[idx] || '⬜', data: `xox_move_${idx}_${gameId}` }));
-            }
-            buttons.push(row);
-        }
-    } else if (type === 'c4') {
-        message = `🔴🟡 **CONNECT FOUR**\nBet: $${game.bet}\n\nTurn: [${game.players[game.turn]}](tg://user?id=${game.players[game.turn]})\n`;
-        // Board display as text since buttons are limited
-        let boardText = "";
-        for (let r = 0; r < game.rows; r++) {
-            boardText += game.board[r].map(cell => cell || '⚪').join("") + "\n";
-        }
-        message += "\n" + boardText;
-        
-        let row = [];
-        for (let c = 0; c < game.cols; c++) {
-            row.push(Api.KeyboardButtonCallback({ text: `${c+1}`, data: `c4_move_${c}_${gameId}` }));
-        }
-        buttons.push(row);
-    }
-
-    await client.editMessage(peer, {
-        id: msgId,
-        message: message,
-        buttons: client.buildReplyMarkup(buttons)
-    });
-}
-
-const leveling = require('../utils/leveling');
-
-async function handleEndGame(client, peer, msgId, game, winner, gameId) {
+async function handleEndGame(client, peer, msgId, game, winner, gameId, type, isSurrender) {
+    const pot = game.bet * 2;
+    const p1 = game.getName(game.players[0]);
+    const p2 = game.getName(game.players[1]);
+    const typeLabel = type === 'xox' ? 'TIC-TAC-TOE' : 'CONNECT FOUR';
+    const typeIcon = type === 'xox' ? '❌⭕' : '🔴🟡';
     let msg = "";
+
     if (winner === 'draw') {
-        msg = "🤝 **DRAW!** Money returned.";
+        for (const pid of game.players) {
+            let u = await User.findOne({ userId: pid }) || await User.create({ userId: pid });
+            u.wallet += game.bet; await u.save();
+        }
+        msg = `${typeIcon} <b>${typeLabel} — DRAW!</b> 🤝\n${p1} vs ${p2}\n\nBets refunded.`;
     } else {
-        const winUser = await User.findOne({ userId: winner });
-        const loserId = game.players.find(id => id !== winner);
-        const loseUser = await User.findOne({ userId: loserId });
-
-        winUser.wallet += game.bet;
-        loseUser.wallet -= game.bet;
-        
+        const winnerName = game.getName(winner);
+        let winUser = await User.findOne({ userId: winner }) || await User.create({ userId: winner });
+        winUser.wallet += pot;
         const xpRes = await leveling.addXP(winner, 100);
-        msg = `🏆 **WINNER!**\n\nPlayer: [${winner}](tg://user?id=${winner})\nPrize: $${game.bet}`;
-        if (xpRes.leveledUp) msg += `\n🆙 Leveled up to ${xpRes.level}!`;
-
         await winUser.save();
-        await loseUser.save();
+        const reason = isSurrender ? 'SURRENDER' : 'GAME OVER';
+        msg = `${typeIcon} <b>${typeLabel} — ${reason}!</b>\n${p1} vs ${p2}\n\n🏆 <b>${winnerName}</b> wins <b>$${pot}</b>!`;
+        if (xpRes.leveledUp) msg += `\n🆙 Level ${xpRes.level}!`;
     }
-
-    await client.editMessage(peer, {
-        id: msgId,
-        message: msg,
-        buttons: null
-    });
+    await editMsg(client, peer, msgId, msg, null);
     sessions.delete(gameId);
 }
 

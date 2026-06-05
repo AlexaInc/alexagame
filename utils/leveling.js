@@ -2,7 +2,9 @@ const User = require('../models/User');
 
 const addXP = async (userId, amount) => {
     let user = await User.findOne({ userId });
-    if (!user) return;
+    if (!user) {
+        user = await User.create({ userId });
+    }
 
     user.xp += amount;
     const nextLevelXP = user.level * 1000;

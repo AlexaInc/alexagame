@@ -1,205 +1,155 @@
 const { Api } = require("telegram");
 const User = require('../models/User');
 const sessions = require('../games/sessions');
-const { buildGrid } = require('./inlineGames');
+const { buildMinesGrid } = require('./inlineGames');
+const { editMsg } = require('../utils/editMsg');
+const leveling = require('../utils/leveling');
 
 const handleInlineCallback = async (client, update) => {
     const data = update.data.toString();
     const userId = update.userId.toString();
-    const parts = data.split("_");
+    const parts = data.split("|");
     const gameType = parts[0];
-    const action = parts[1];
-    const gameId = parts[2];
-    const val = parts[3];
+    const gameId = parts[1];
 
-    const session = sessions.get(gameId);
-    if (!session) return;
-
-    // --- MINES LOGIC ---
-    if (gameType === 'mines' && action === 'click') {
-        if (session.userId !== userId) return;
-        const r = parseInt(parts[3]);
-        const c = parseInt(parts[4]);
-
-        if (session.grid[r][c] !== '⬜') return;
+    // --- MINES ---
+    if (gameType === 'mines') {
+        const session = sessions.get(gameId);
+        if (!session || session.type !== 'mines' || session.userId !== userId) return;
+        const r = parseInt(parts[2]), c = parseInt(parts[3]);
+        if (isNaN(r) || isNaN(c) || session.grid[r][c] !== '⬜') return;
 
         const isMine = session.mines.some(m => m.r === r && m.c === c);
         if (isMine) {
-            const user = await User.findOne({ userId });
-            user.wallet -= session.bet;
-            await user.save();
-            await client.editMessage(update.peer, {
-                id: update.msgId,
-                message: "💥 **BOOM!** You hit a mine. Lost $100.",
-                buttons: null
-            });
+            let user = await User.findOne({ userId });
+            if (!user) user = await User.create({ userId });
+            user.wallet -= session.bet; await user.save();
+            await editMsg(client, update.peer, update.msgId, `💥 <b>BOOM!</b> You hit a mine. Lost $${session.bet}.`, null);
             sessions.delete(gameId);
         } else {
             session.grid[r][c] = '💎';
             session.revealed++;
-            if (session.revealed === 7) { // All safe spots found
-                const user = await User.findOne({ userId });
-                user.wallet += session.bet * 5;
-                await user.save();
-                await client.editMessage(update.peer, {
-                    id: update.msgId,
-                    message: "🏆 **CLEAR!** You found all safe spots. Won $500!",
-                    buttons: null
-                });
+            if (session.revealed === 7) {
+                let user = await User.findOne({ userId });
+                if (!user) user = await User.create({ userId });
+                const prize = session.bet * 5;
+                user.wallet += prize; await user.save();
+                await editMsg(client, update.peer, update.msgId, `🏆 <b>CLEAR!</b> All safe spots found. Won $${prize}!`, null);
                 sessions.delete(gameId);
             } else {
-                await client.editMessage(update.peer, {
-                    id: update.msgId,
-                    message: `💎 Safe! Revealed: ${session.revealed}/7`,
-                    buttons: client.buildReplyMarkup(buildGrid(gameId, session.grid, 'mines_click'))
-                });
+                await editMsg(client, update.peer, update.msgId, `💎 Safe! Revealed: ${session.revealed}/7`, buildMinesGrid(gameId, session.grid));
             }
-    // --- ROULETTE LOGIC ---
-    if (gameType === 'roulette' && action === 'pull') {
-        const user = await User.findOne({ userId });
-        const bet = 200;
-        const isDeadly = Math.random() < (1/6);
-
-        if (isDeadly) {
-            user.wallet -= bet;
-            user.isDead = true;
-            user.lastDeath = new Date();
-            user.health = 0;
-            await client.editMessage(update.peer, {
-                id: update.msgId,
-                message: "💥 **BANG!** You shot yourself. You are DEAD.",
-                buttons: null
-            });
-        } else {
-            user.wallet += bet * 2;
-            await client.editMessage(update.peer, {
-                id: update.msgId,
-                message: "🚩 **CLICK.** The chamber was empty. You won $400!",
-                buttons: null
-            });
         }
-        await user.save();
-        sessions.delete(gameId);
+        return;
     }
 
-    // --- HIGHER OR LOWER LOGIC ---
-    if (gameType === 'hl' && action === 'play') {
-        if (session.userId !== userId) return;
-        const choice = parts[3];
-        const nextNum = Math.floor(Math.random() * 13) + 1;
-        const user = await User.findOne({ userId });
+    // --- ROULETTE ---
+    if (gameType === 'roulette') {
+        let user = await User.findOne({ userId });
+        if (!user) user = await User.create({ userId });
+        const bet = 200;
+        if (Math.random() < 1/6) {
+            user.wallet -= bet; user.isDead = true; user.lastDeath = new Date(); user.health = 0;
+            await user.save();
+            await editMsg(client, update.peer, update.msgId, `💥 <b>BANG!</b> You are DEAD. Lost $${bet}.`, null);
+        } else {
+            user.wallet += bet * 2; await user.save();
+            await editMsg(client, update.peer, update.msgId, `🚩 <b>CLICK.</b> Empty chamber. Won $${bet * 2}!`, null);
+        }
+        return;
+    }
 
-        const isHigher = nextNum > session.lastNum;
-        const isWin = (choice === 'higher' && isHigher) || (choice === 'lower' && !isHigher && nextNum !== session.lastNum);
+    // --- HIGHER OR LOWER ---
+    if (gameType === 'hl') {
+        const session = sessions.get(gameId);
+        if (!session || session.type !== 'hl' || session.userId !== userId) return;
+        const choice = parts[2];
+        const nextNum = Math.floor(Math.random() * 13) + 1;
+        let user = await User.findOne({ userId });
+        if (!user) user = await User.create({ userId });
 
         if (nextNum === session.lastNum) {
-             await client.editMessage(update.peer, {
-                id: update.msgId,
-                message: `🔄 The number was the same (**${nextNum}**)! Try again.`,
-                buttons: update.message.replyMarkup
-            });
+            await editMsg(client, update.peer, update.msgId, `🔄 Same number (<b>${nextNum}</b>)! Try again.`, [
+                [new Api.KeyboardButtonCallback({ text: "Higher ⬆️", data: Buffer.from(`hl|${gameId}|higher`) }),
+                 new Api.KeyboardButtonCallback({ text: "Lower ⬇️", data: Buffer.from(`hl|${gameId}|lower`) })]
+            ]);
             return;
         }
-
+        const isWin = (choice === 'higher' && nextNum > session.lastNum) || (choice === 'lower' && nextNum < session.lastNum);
         if (isWin) {
-            session.streak++;
-            session.lastNum = nextNum;
+            session.streak++; session.lastNum = nextNum;
             if (session.streak >= 3) {
-                user.wallet += session.bet * 3;
-                await user.save();
-                await client.editMessage(update.peer, {
-                    id: update.msgId,
-                    message: `🏆 **STREAK!** The number was **${nextNum}**. You won $300!`,
-                    buttons: null
-                });
+                const prize = session.bet * 3;
+                user.wallet += prize; await user.save();
+                await editMsg(client, update.peer, update.msgId, `🏆 <b>STREAK x3!</b> Number was <b>${nextNum}</b>. Won $${prize}!`, null);
                 sessions.delete(gameId);
             } else {
-                await client.editMessage(update.peer, {
-                    id: update.msgId,
-                    message: `✅ Correct! It was **${nextNum}**. One more correct guess to win!\nNext number Higher or Lower than **${nextNum}**?`,
-                    buttons: update.message.replyMarkup
-                });
+                await editMsg(client, update.peer, update.msgId, `✅ Correct! Was <b>${nextNum}</b>. Streak: ${session.streak}/3\nHigher or Lower than <b>${nextNum}</b>?`, [
+                    [new Api.KeyboardButtonCallback({ text: "Higher ⬆️", data: Buffer.from(`hl|${gameId}|higher`) }),
+                     new Api.KeyboardButtonCallback({ text: "Lower ⬇️", data: Buffer.from(`hl|${gameId}|lower`) })]
+                ]);
             }
         } else {
-            user.wallet -= session.bet;
-            await user.save();
-            await client.editMessage(update.peer, {
-                id: update.msgId,
-                message: `❌ Wrong! The number was **${nextNum}**. You lost $100.`,
-                buttons: null
-            });
+            user.wallet -= session.bet; await user.save();
+            await editMsg(client, update.peer, update.msgId, `❌ Wrong! Was <b>${nextNum}</b>. Lost $${session.bet}.`, null);
             sessions.delete(gameId);
         }
+        return;
     }
-}
 
-    // --- FLIP LOGIC ---
-    if (gameType === 'flip' && action === 'play') {
-        const side = parts[3];
+    // --- FLIP ---
+    if (gameType === 'flip') {
+        const side = parts[2];
         const result = Math.random() > 0.5 ? 'heads' : 'tails';
-        const user = await User.findOne({ userId });
+        let user = await User.findOne({ userId });
+        if (!user) user = await User.create({ userId });
         const bet = 100;
-
         if (side === result) {
-            user.wallet += bet;
-            await client.editMessage(update.peer, {
-                id: update.msgId,
-                message: `🪙 Result: **${result.toUpperCase()}**\n✅ You won $${bet}!`,
-                buttons: null
-            });
+            user.wallet += bet; await user.save();
+            await editMsg(client, update.peer, update.msgId, `🪙 <b>${result.toUpperCase()}</b> ✅ You won $${bet}!`, null);
         } else {
-            user.wallet -= bet;
-            await client.editMessage(update.peer, {
-                id: update.msgId,
-                message: `🪙 Result: **${result.toUpperCase()}**\n❌ You lost $${bet}!`,
-                buttons: null
-            });
+            user.wallet -= bet; await user.save();
+            await editMsg(client, update.peer, update.msgId, `🪙 <b>${result.toUpperCase()}</b> ❌ You lost $${bet}!`, null);
         }
-        await user.save();
-        sessions.delete(gameId);
+        return;
     }
 
-    // --- RPS LOGIC ---
-    if (gameType === 'rps' && action === 'move') {
-        const move = parts[3];
-        if (session.moves[userId]) return; // Already moved
-
+    // --- RPS ---
+    if (gameType === 'rps') {
+        const session = sessions.get(gameId);
+        if (!session || session.type !== 'rps') return;
+        const move = parts[2];
+        if (session.moves[userId]) return;
         session.moves[userId] = move;
         const players = Object.keys(session.moves);
-
         if (players.length === 2) {
-            const p1 = players[0];
-            const p2 = players[1];
-            const m1 = session.moves[p1];
-            const m2 = session.moves[p2];
-
+            const [p1, p2] = players;
+            const m1 = session.moves[p1], m2 = session.moves[p2];
             let winner = null;
             if (m1 === m2) winner = 'draw';
-            else if ((m1 === 'rock' && m2 === 'scissors') || 
-                     (m1 === 'paper' && m2 === 'rock') || 
-                     (m1 === 'scissors' && m2 === 'paper')) winner = p1;
+            else if ((m1==='rock'&&m2==='scissors')||(m1==='paper'&&m2==='rock')||(m1==='scissors'&&m2==='paper')) winner = p1;
             else winner = p2;
 
-            let msg = `✊✌️✋ **RPS RESULT**\n\nPlayer 1: ${m1}\nPlayer 2: ${m2}\n\n`;
-            if (winner === 'draw') msg += "🤝 It's a DRAW!";
-            else {
-                const w = await User.findOne({ userId: winner });
-                const loser = winner === p1 ? p2 : p1;
-                const l = await User.findOne({ userId: loser });
-                w.wallet += session.bet;
-                l.wallet -= session.bet;
-                await w.save();
-                await l.save();
-                msg += `🏆 Winner: [${winner}](tg://user?id=${winner})! Won $${session.bet}`;
-            }
+            const pot = session.bet * 2;
+            // Charge both
+            let u1 = await User.findOne({ userId: p1 }) || await User.create({ userId: p1 });
+            let u2 = await User.findOne({ userId: p2 }) || await User.create({ userId: p2 });
+            u1.wallet -= session.bet; u2.wallet -= session.bet;
 
-            await client.editMessage(update.peer, {
-                id: update.msgId,
-                message: msg,
-                buttons: null
-            });
+            let msg = `✊✌️✋ <b>RPS RESULT</b>\n\nP1: ${m1} vs P2: ${m2}\n\n`;
+            if (winner === 'draw') {
+                u1.wallet += session.bet; u2.wallet += session.bet;
+                msg += "🤝 DRAW! Bets refunded.";
+            } else {
+                const wUser = winner === p1 ? u1 : u2;
+                wUser.wallet += pot;
+                msg += `🏆 Winner gets <b>$${pot}</b>!`;
+            }
+            await u1.save(); await u2.save();
+            await editMsg(client, update.peer, update.msgId, msg, null);
             sessions.delete(gameId);
         }
+        return;
     }
 };
 

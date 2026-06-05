@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Carrom Pool</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#1a0e00;color:#fff;font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;overflow-x:hidden;touch-action:none;}
+#blocked{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:40px 20px;}
+#blocked h2{margin-bottom:10px;} #blocked p{color:#64748b;max-width:280px;font-size:14px;} #blocked a{color:#3b82f6;}
+#wrap{display:none;width:100%;max-width:430px;flex-direction:column;align-items:center;padding:4px;}
+#topbar{display:flex;justify-content:flex-end;gap:8px;width:100%;padding:4px 8px;align-items:center;}
+.tbtn{padding:7px 14px;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;}
+.tbtn.st{background:linear-gradient(135deg,#22c55e,#16a34a);} .tbtn.st:disabled{opacity:.35;cursor:not-allowed;} .tbtn.ct{background:#334155;cursor:default;}
+#board-area{position:relative;width:100%;}
+.pl{position:absolute;font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap;z-index:5;}
+.pl.me{color:#f59e0b;} .pl.op{color:#94a3b8;} .pl.tm{color:#22c55e;} .pl.em{color:#444;font-style:italic;}
+#pt{top:0;left:50%;transform:translateX(-50%);} #pb{bottom:0;left:50%;transform:translateX(-50%);}
+#plf{top:50%;left:0;transform:translateY(-50%) rotate(-90deg);display:none;} #prt{top:50%;right:0;transform:translateY(-50%) rotate(90deg);display:none;}
+canvas{display:block;border-radius:6px;margin:14px auto;}
+#toast{font-size:11px;text-align:center;color:#fbbf24;min-height:16px;}
+#scores{display:flex;justify-content:center;gap:6px;font-size:10px;padding:2px;flex-wrap:wrap;}
+.sc{padding:2px 6px;border-radius:6px;} .sc.on{background:rgba(245,158,11,.15);border:1px solid #f59e0b;} .sc.off{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);color:#555;}
+#swa{width:100%;max-width:430px;padding:4px 20px;}
+#swt{width:100%;height:44px;background:rgba(255,255,255,.05);border-radius:22px;position:relative;border:1px solid rgba(255,255,255,.08);}
+#swh{width:56px;height:40px;background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:20px;position:absolute;top:2px;left:calc(50% - 28px);cursor:grab;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.3);transition:left 0.05s;}
+#swl{text-align:center;font-size:10px;color:#555;margin-top:2px;}
+#foot{font-size:11px;text-align:center;color:#666;padding:2px;}
+</style>
+</head>
+<body>
+<div id="blocked"><div style="font-size:48px;margin-bottom:16px;">🔒</div><h2>Access Blocked</h2><p>Open from <a href="https://t.me/Alexagamebot">@Alexagamebot</a> via <b>/carrom</b></p></div>
+<div id="wrap" style="display:none;">
+<div id="topbar"><span id="toast"></span><span class="tbtn ct" id="cntb">0/4</span><button class="tbtn st" id="stb" onclick="hs()" disabled style="display:none;">🚀 Start</button></div>
+<div id="scores"></div>
+<div id="board-area">
+<div class="pl em" id="pt">waiting...</div><div class="pl em" id="plf"></div><div class="pl em" id="prt"></div><div class="pl me" id="pb">Me</div>
+<canvas id="cv"></canvas>
+</div>
+<div id="swa"><div id="swt"><div id="swh">◀ ▶</div></div><div id="swl">Slide to position striker</div></div>
+<div id="foot"></div>
+</div>
+<script>
+const tg=window.Telegram?.WebApp;if(tg){tg.expand();tg.ready();}
+if(!tg?.initData||!tg.initDataUnsafe?.user?.id){document.getElementById('blocked').style.display='flex';throw new Error('no auth');}
+document.getElementById('wrap').style.display='flex';
+const cv=document.getElementById('cv'),X=cv.getContext('2d'),W=Math.min(innerWidth-16,400);cv.width=W;cv.height=W;
+const SC=W/400,API=location.origin;
+const sp=new URLSearchParams(location.search).get('tgWebAppStartParam')||tg.initDataUnsafe?.start_param||'';
+const GID=sp.replace('carrom_','').replace(/_0_/g,':');
+async function rpc(m,p,b){try{const o={method:m,headers:{'X-Init-Data':tg.initData,'Content-Type':'application/json'}};if(b)o.body=JSON.stringify(b);const r=await fetch(API+p,o);const t=await r.text();try{return JSON.parse(t);}catch{return{ok:false,error:'Error'};}}catch{return{ok:false,error:'Network'};}}
+
+// Physics constants — MUST match server
+const FR=0.992,MV=0.1,PAD=24,SZ=400;
+const PKS=[[PAD,PAD],[SZ-PAD,PAD],[PAD,SZ-PAD],[SZ-PAD,SZ-PAD]];
+const PK_CATCH=28,PK_SINK=16,PK_PULL=0.8;
+
+let S=null,myIdx=0,rot=0,lPcs=[],lStr=null,sim=false,drag=false,dragE={x:0,y:0},pollId=null,lastSid=null;
+
+function rp(px,py){if(rot===0)return{x:px,y:py};const cx=SZ/2,cy=SZ/2,c=Math.cos(rot),s=Math.sin(rot);return{x:cx+(px-cx)*c-(py-cy)*s,y:cy+(px-cx)*s+(py-cy)*c};}
+
+// Client physics with pocket gravity
+function step(){let mv=false;const all=[...lPcs.filter(p=>!p.pocketed)];if(lStr&&!lStr.pocketed)all.push(lStr);
+for(const d of all){d.x+=d.vx;d.y+=d.vy;d.vx*=FR;d.vy*=FR;
+if(Math.abs(d.vx)<MV&&Math.abs(d.vy)<MV){d.vx=0;d.vy=0;}else mv=true;
+let sunk=false;
+for(const pk of PKS){const dx=pk.x-d.x,dy=pk.y-d.y,dist=Math.sqrt(dx*dx+dy*dy);
+if(dist<PK_SINK){d.pocketed=true;d.vx=0;d.vy=0;sunk=true;break;}
+else if(dist<PK_CATCH){const pull=PK_PULL*(1-dist/PK_CATCH);d.vx+=dx/dist*pull;d.vy+=dy/dist*pull;}}
+if(sunk)continue;
+if(d.x-d.r<PAD){d.x=PAD+d.r;d.vx=Math.abs(d.vx)*.5;}if(d.x+d.r>SZ-PAD){d.x=SZ-PAD-d.r;d.vx=-Math.abs(d.vx)*.5;}
+if(d.y-d.r<PAD){d.y=PAD+d.r;d.vy=Math.abs(d.vy)*.5;}if(d.y+d.r>SZ-PAD){d.y=SZ-PAD-d.r;d.vy=-Math.abs(d.vy)*.5;}}
+for(let i=0;i<all.length;i++)for(let j=i+1;j<all.length;j++){const a=all[i],b=all[j];if(a.pocketed||b.pocketed)continue;
+const dx=b.x-a.x,dy=b.y-a.y,dist=Math.sqrt(dx*dx+dy*dy),md=a.r+b.r;
+if(dist<md&&dist>0){const ov=(md-dist)/2,nx=dx/dist,ny=dy/dist;a.x-=nx*ov;a.y-=ny*ov;b.x+=nx*ov;b.y+=ny*ov;
+const dvn=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;if(dvn>0){a.vx-=dvn*nx;a.vy-=dvn*ny;b.vx+=dvn*nx;b.vy+=dvn*ny;}}}return mv;}
+
+// Start local sim immediately (before server responds)
+function startSim(pieces,striker,vx,vy){
+lPcs=pieces.map(p=>({x:p.x,y:p.y,r:p.r,type:p.type,pocketed:p.pocketed,vx:0,vy:0}));
+lStr={x:striker.x,y:striker.y,r:striker.r,pocketed:false,type:'striker',vx,vy};
+sim=true;}
+
+// Drawing
+function drawBoard(){const s=W,fw=PAD*SC*.9;
+X.fillStyle='#1a0f05';X.fillRect(0,0,s,s);X.fillStyle='#2a1a0a';X.fillRect(fw*.3,fw*.3,s-fw*.6,s-fw*.6);
+const g1=X.createRadialGradient(s/2,s/2,0,s/2,s/2,s*.55);g1.addColorStop(0,'#f0dbb8');g1.addColorStop(1,'#dcc49a');
+X.fillStyle=g1;X.fillRect(fw,fw,s-fw*2,s-fw*2);
+X.strokeStyle='rgba(0,0,0,.05)';X.lineWidth=1;const m=fw+4,e=s-fw-4,cn=s*.08;
+[[m,m,s/2-cn,s/2-cn],[e,m,s/2+cn,s/2-cn],[m,e,s/2-cn,s/2+cn],[e,e,s/2+cn,s/2+cn]].forEach(([x1,y1,x2,y2])=>{X.beginPath();X.moveTo(x1,y1);X.lineTo(x2,y2);X.stroke();});
+X.strokeStyle='#cc3333';X.lineWidth=2.5;X.beginPath();X.arc(s/2,s/2,s*.13,0,Math.PI*2);X.stroke();
+X.strokeStyle='rgba(0,0,0,.1)';X.lineWidth=1.5;X.beginPath();X.arc(s/2,s/2,s*.08,0,Math.PI*2);X.stroke();
+X.strokeStyle='rgba(0,0,0,.1)';X.lineWidth=1;for(let i=0;i<8;i++){const a=Math.PI*2/8*i;X.beginPath();X.moveTo(s/2,s/2);X.lineTo(s/2+Math.cos(a)*s*.12,s/2+Math.sin(a)*s*.12);X.stroke();}
+X.fillStyle='#cc3333';X.beginPath();X.arc(s/2,s/2,3*SC,0,Math.PI*2);X.fill();
+const rd=s*.18;[[s/2-rd,s/2-rd],[s/2+rd,s/2-rd],[s/2-rd,s/2+rd],[s/2+rd,s/2+rd]].forEach(([cx,cy])=>{X.fillStyle='#cc3333';X.beginPath();X.arc(cx,cy,3*SC,0,Math.PI*2);X.fill();});
+X.strokeStyle='rgba(0,0,0,.07)';X.lineWidth=1;const bl=fw+s*.12,br=s-fw-s*.12;
+X.beginPath();X.moveTo(bl,s-fw-s*.12);X.lineTo(br,s-fw-s*.12);X.stroke();X.beginPath();X.moveTo(bl,fw+s*.12);X.lineTo(br,fw+s*.12);X.stroke();
+PKS.forEach(([px,py])=>{const p=rp(px,py),rx=p.x*SC,ry=p.y*SC,pr=PK_CATCH*SC;
+X.fillStyle='#080808';X.beginPath();X.arc(rx,ry,pr*.9,0,Math.PI*2);X.fill();X.strokeStyle='rgba(60,40,15,.3)';X.lineWidth=2;X.beginPath();X.arc(rx,ry,pr*.9,0,Math.PI*2);X.stroke();});}
+
+function dp(px,py,r,type,pk){if(pk)return;const p=rp(px,py),dx=p.x*SC,dy=p.y*SC,dr=r*SC;
+X.fillStyle='rgba(0,0,0,.1)';X.beginPath();X.arc(dx+1,dy+1.5,dr,0,Math.PI*2);X.fill();
+let g;const CR={queen:['#ff4444','#991111'],black:['#4a4a4a','#0a0a0a'],white:['#fff','#bbb'],striker:['#ffe066','#b8860b']};
+const cl=CR[type]||CR.striker;g=X.createRadialGradient(dx-dr*.2,dy-dr*.2,0,dx,dy,dr);g.addColorStop(0,cl[0]);g.addColorStop(1,cl[1]);
+X.fillStyle=g;X.beginPath();X.arc(dx,dy,dr,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,255,255,.08)';X.beginPath();X.arc(dx-dr*.2,dy-dr*.2,dr*.2,0,Math.PI*2);X.fill();}
+
+function draw(){X.clearRect(0,0,W,W);drawBoard();if(!S||S.status==='lobby')return;
+const pcs=sim?lPcs:(S.pieces||[]),str=sim?lStr:S.striker;
+pcs.forEach(p=>dp(p.x,p.y,p.r,p.type,p.pocketed));if(str&&!str.pocketed)dp(str.x,str.y,str.r,'striker',false);
+if(drag&&S.isMyTurn&&str&&!str.pocketed&&!sim){const p=rp(str.x,str.y),sx=p.x*SC,sy=p.y*SC,dx=sx-dragE.x,dy=sy-dragE.y,dist=Math.sqrt(dx*dx+dy*dy);
+if(dist>5){X.strokeStyle='rgba(255,255,255,.6)';X.lineWidth=2;X.setLineDash([6,4]);X.beginPath();X.moveTo(sx,sy);X.lineTo(sx+dx/dist*W*.5,sy+dy/dist*W*.5);X.stroke();X.setLineDash([]);
+X.fillStyle='rgba(255,255,255,.4)';X.beginPath();X.arc(sx+dx/dist*W*.5,sy+dy/dist*W*.5,3,0,Math.PI*2);X.fill();
+const pw=Math.min(dist/(W*.25),1),bx=W*.1,by=W-10,bw=W*.8;X.fillStyle='rgba(0,0,0,.2)';X.beginPath();X.roundRect(bx,by,bw,5,3);X.fill();
+const pg=X.createLinearGradient(bx,0,bx+bw*pw,0);pg.addColorStop(0,'#22c55e');pg.addColorStop(.5,'#f59e0b');pg.addColorStop(1,'#ef4444');X.fillStyle=pg;X.beginPath();X.roundRect(bx,by,bw*pw,5,3);X.fill();}}}
+
+// Swipe bar — fixed direction + slower
+const swt=document.getElementById('swt'),swh=document.getElementById('swh');
+let swip=false,swStartX=0,swStartStrikerX=0;
+swt.addEventListener('mousedown',e=>{swStart(e);});swt.addEventListener('touchstart',e=>{e.preventDefault();swStart(e);},{passive:false});
+document.addEventListener('mousemove',e=>{if(swip)swMove(e);});document.addEventListener('touchmove',e=>{if(swip){e.preventDefault();swMove(e);}},{passive:false});
+document.addEventListener('mouseup',()=>swip=false);document.addEventListener('touchend',()=>swip=false);
+
+function swStart(e){if(!S?.isMyTurn||S.status!=='playing'||sim)return;swip=true;
+const t=e.touches?e.touches[0]:e;swStartX=t.clientX;swStartStrikerX=S.striker?S.striker.x:SZ/2;}
+
+let swDb=null;
+function swMove(e){if(!swip||!S?.striker)return;const t=e.touches?e.touches[0]:e;
+const rect=swt.getBoundingClientRect();
+// Direct position mapping: touch position on bar = striker position
+const pct=Math.max(0,Math.min(1,(t.clientX-rect.left)/rect.width));
+const wx=PAD+50+pct*(SZ-PAD*2-100);
+S.striker.x=wx;updateThumb();
+if(!swDb)swDb=setTimeout(()=>{rpc('POST','/carrom/move',{gameId:GID,x:wx});swDb=null;},100);}
+
+function updateThumb(){if(!S?.striker)return;const pct=(S.striker.x-PAD-50)/(SZ-PAD*2-100);
+swh.style.left=Math.max(0,Math.min(swt.offsetWidth-56,pct*(swt.offsetWidth-56)))+'px';}
+
+// Canvas: pull back from striker to shoot
+cv.addEventListener('mousedown',e=>csd(cgp(e)));cv.addEventListener('mousemove',e=>cmd(cgp(e)));cv.addEventListener('mouseup',()=>ced());
+cv.addEventListener('touchstart',e=>{e.preventDefault();csd(cgp(e));},{passive:false});cv.addEventListener('touchmove',e=>{e.preventDefault();cmd(cgp(e));},{passive:false});cv.addEventListener('touchend',e=>{e.preventDefault();ced();},{passive:false});
+function cgp(e){const r=cv.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}
+
+function csd(p){if(!S||!S.isMyTurn||S.status!=='playing'||sim)return;const str=S.striker;if(!str||str.pocketed)return;
+const q=rp(str.x,str.y),sx=q.x*SC,sy=q.y*SC;if(Math.sqrt((p.x-sx)**2+(p.y-sy)**2)<str.r*SC*4){drag=true;dragE=p;}}
+function cmd(p){if(drag)dragE=p;}
+async function ced(){if(!drag)return;drag=false;const str=S?.striker;if(!str)return;
+const q=rp(str.x,str.y),sx=q.x*SC,sy=q.y*SC;
+const dx=sx-dragE.x,dy=sy-dragE.y,dist=Math.sqrt(dx*dx+dy*dy);if(dist<10)return;
+const pw=Math.min(dist/(W*.25),1)*40,nx=dx/dist,ny=dy/dist;
+const c=Math.cos(-rot),s=Math.sin(-rot),vx=(nx*c-ny*s)*pw/SC,vy=(nx*s+ny*c)*pw/SC;
+// START LOCAL SIM IMMEDIATELY (don't wait for server)
+startSim(S.pieces,str,vx,vy);
+document.getElementById('foot').textContent='⏳ Shooting...';
+// Then send to server in background
+const r=await rpc('POST','/carrom/shoot',{gameId:GID,vx,vy});
+if(r.ok){S=r.state;lastSid=JSON.stringify(S.lastShot);updateUI();}
+else{document.getElementById('toast').textContent=r.error||'Failed';sim=false;}}
+
+// UI
+const ci=(c)=>c==='black'?'⚫':'⚪';
+function uLbl(){if(!S)return;const n=S.players.length,ps=S.players,mi=S.playerIdx>=0?S.playerIdx:0;
+const el={t:document.getElementById('pt'),b:document.getElementById('pb'),l:document.getElementById('plf'),r:document.getElementById('prt')};
+if(n<=2){el.l.style.display='none';el.r.style.display='none';el.b.textContent=ps[mi]?ci(ps[mi].color)+' '+ps[mi].name+' (You)':'You';el.b.className='pl me';
+const oi=(mi+1)%n;el.t.textContent=ps[oi]?ci(ps[oi].color)+' '+ps[oi].name:'waiting...';el.t.className=ps[oi]?'pl op':'pl em';}
+else{el.l.style.display='';el.r.style.display='';el.b.textContent=ci(ps[mi]?.color||'black')+' '+(ps[mi]?.name||'You')+' (You)';el.b.className='pl me';
+const tm=(mi+2)%4;el.t.textContent=ps[tm]?ci(ps[tm].color)+' '+ps[tm].name+' (Team)':'waiting...';el.t.className=ps[tm]?'pl tm':'pl em';
+const o1=(mi+1)%4,o2=(mi+3)%4;el.l.textContent=ps[o1]?ci(ps[o1].color)+' '+ps[o1].name:'waiting...';el.l.className=ps[o1]?'pl op':'pl em';
+el.r.textContent=ps[o2]?ci(ps[o2].color)+' '+ps[o2].name:'waiting...';el.r.className=ps[o2]?'pl op':'pl em';}}
+
+function updateUI(){if(!S)return;document.getElementById('cntb').textContent=S.players.length+'/4';
+const btn=document.getElementById('stb');
+if(S.status==='lobby'){btn.style.display=S.isHost?'':'none';btn.disabled=S.players.length<2;btn.textContent=S.players.length<2?'Need 2+':'🚀 Start';}else btn.style.display='none';
+let sc='';S.players.forEach((p,i)=>{sc+=`<span class="sc ${S.turn===i&&S.status==='playing'?'on':'off'}">${ci(p.color)} ${p.name}${p.isMe?' (You)':''}: <b>${p.score}</b></span>`;});
+if(S.status==='playing')sc+=`<span class="sc off">⚫${S.blackLeft} ⚪${S.whiteLeft}</span>`;
+document.getElementById('scores').innerHTML=sc;
+const ft=document.getElementById('foot'),sl=document.getElementById('swl');
+if(S.status==='lobby'){ft.textContent='Waiting (2-4 players)';sl.textContent='Not started';}
+else if(S.status==='ended'){document.getElementById('toast').textContent='🏆 '+(S.winnerPlayers||[]).join(' & ')+' win!';ft.textContent='Game over';sl.textContent='';}
+else if(sim){ft.textContent='⏳ Moving...';sl.textContent='';}
+else if(S.isMyTurn){ft.textContent='▶️ Pull back from striker to shoot';sl.textContent='◀ Slide to position ▶';}
+else{ft.textContent='⏳ '+S.currentPlayer+"'s turn";sl.textContent='Watching...';}
+if(S.lastEvent&&S.status==='playing')document.getElementById('toast').textContent=S.lastEvent.text;
+uLbl();updateThumb();}
+
+async function hs(){const b=document.getElementById('stb');b.disabled=true;b.textContent='⏳...';
+const r=await rpc('POST','/carrom/start',{gameId:GID});if(r.ok){S=r.state;updateUI();}
+else{document.getElementById('toast').textContent=r.error||'Failed';b.disabled=false;b.textContent='🚀 Start';}}
+
+function loop(){try{if(sim&&!step())sim=false;draw();}catch(e){console.error('loop err:',e);sim=false;}requestAnimationFrame(loop);}
+
+let pollFails=0;
+async function poll(){
+    try{
+        const r=await rpc('GET',`/carrom/state?gameId=${encodeURIComponent(GID)}`);
+        if(!r.ok){
+            pollFails++;
+            document.getElementById('toast').textContent=r.error||'Game not found';
+            if(pollFails>10){clearInterval(pollId);pollId=null;document.getElementById('foot').textContent='Game ended or not found. Close and reopen.';}
+            return;
+        }
+        pollFails=0;
+        const prev=S;S=r.state;myIdx=S.playerIdx;
+        const rots=[0,Math.PI,Math.PI/2,Math.PI*1.5];rot=rots[myIdx>=0?myIdx:0]||0;
+        if(S.lastShot&&S.status==='playing'&&!sim&&prev?.pieces?.length){
+            const sk=JSON.stringify(S.lastShot);
+            if(sk!==lastSid){lastSid=sk;startSim(prev.pieces,{x:S.lastShot.strikerX,y:S.lastShot.strikerY,r:prev.striker?.r||12},S.lastShot.vx,S.lastShot.vy);}
+        }
+        updateUI();
+        if(S.status==='ended'){clearInterval(pollId);pollId=null;}
+    }catch(e){console.error('poll err:',e);pollFails++;}
+}
+
+async function init(){
+    if(!GID||GID===sp||!GID.startsWith('crm:')){
+        document.getElementById('toast').textContent='No game found.';
+        document.getElementById('foot').textContent='Use /carrom in a group to create a game.';
+        // Still draw the empty board
+        loop();
+        return;
+    }
+    loop();
+    await poll();
+    if(S) pollId=setInterval(poll,1200);
+}
+init();
+</script>
+</body>
+</html>

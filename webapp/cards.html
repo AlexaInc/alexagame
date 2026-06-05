@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Card Game</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0a1628;color:#fff;font-family:-apple-system,sans-serif;min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;}
+#blocked{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:40px;} #blocked a{color:#3b82f6;}
+#app{display:none;flex:1;flex-direction:column;}
+#hdr{padding:10px;text-align:center;font-size:13px;}
+#hdr b{color:#f59e0b;}
+/* Players bar */
+#players{display:flex;justify-content:center;gap:8px;padding:4px 10px;flex-wrap:wrap;}
+.pbadge{padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);}
+.pbadge.turn{border-color:#f59e0b;background:rgba(245,158,11,.1);}
+.pbadge.played{border-color:#22c55e;background:rgba(34,197,94,.1);}
+/* Table — center area */
+#table{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px;min-height:200px;position:relative;}
+#round-info{font-size:14px;font-weight:700;margin-bottom:12px;}
+#table-cards{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;min-height:100px;align-items:center;}
+.tcard{width:65px;height:95px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;position:relative;transition:transform .3s,box-shadow .3s;}
+.tcard.facedown{background:linear-gradient(135deg,#1e40af,#1e3a8a);border:2px solid #3b82f6;box-shadow:0 4px 12px rgba(59,130,246,.2);}
+.tcard.facedown::after{content:'🂠';font-size:32px;}
+.tcard.faceup{background:#fff;color:#1a1a1a;border:2px solid #ddd;box-shadow:0 4px 15px rgba(0,0,0,.3);animation:flipIn .4s ease;}
+.tcard.faceup .tsuit{font-size:24px;}
+.tcard.faceup .tlabel{font-size:18px;font-weight:800;}
+.tcard.faceup.red{color:#dc2626;}
+.tcard.faceup.winner{border-color:#f59e0b;box-shadow:0 0 20px rgba(245,158,11,.4);}
+.tcard-name{font-size:9px;color:#888;text-align:center;margin-top:2px;max-width:65px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+@keyframes flipIn{0%{transform:rotateY(90deg) scale(.8);}100%{transform:rotateY(0) scale(1);}}
+/* Result banner */
+#result{display:none;text-align:center;padding:10px;font-size:14px;}
+#result b{color:#f59e0b;}
+/* My hand — bottom */
+#hand-area{padding:10px 8px 20px;background:linear-gradient(to top,rgba(0,0,0,.3),transparent);}
+#hand-label{text-align:center;font-size:11px;color:#666;margin-bottom:6px;}
+#hand{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+.hcard{width:72px;height:105px;border-radius:10px;background:#fff;color:#1a1a1a;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:transform .2s,box-shadow .2s,opacity .2s;border:2px solid #e5e7eb;position:relative;user-select:none;-webkit-user-select:none;}
+.hcard:active{transform:translateY(-8px) scale(1.05);}
+.hcard.red{color:#dc2626;}
+.hcard .hsuit{font-size:28px;}
+.hcard .hlabel{font-size:20px;font-weight:800;}
+.hcard.used{opacity:.25;cursor:default;transform:none !important;}
+.hcard.selected{transform:translateY(-12px);border-color:#f59e0b;box-shadow:0 8px 25px rgba(245,158,11,.3);}
+/* Buttons */
+#actions{display:flex;justify-content:center;gap:8px;padding:6px;}
+.abtn{padding:10px 24px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;color:#fff;transition:.2s;}
+.abtn.green{background:#22c55e;} .abtn.blue{background:#3b82f6;}
+.abtn:disabled{opacity:.3;cursor:not-allowed;}
+/* Lobby */
+#lobby{display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;}
+#lobby h2{margin:10px 0 6px;}
+.lplayers{margin:16px 0;font-size:14px;line-height:1.8;}
+.lstbtn{padding:12px 36px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(135deg,#22c55e,#16a34a);margin:6px;}
+.lstbtn:disabled{opacity:.3;cursor:not-allowed;}
+</style>
+</head>
+<body>
+<div id="blocked"><div style="font-size:48px;margin-bottom:16px;">🔒</div><h2>Access Blocked</h2><p>Open from <a href="https://t.me/Alexagamebot">@Alexagamebot</a> via <b>/wcards</b></p></div>
+<div id="app" style="display:none;">
+<div id="hdr">🃏 <b>Card Game</b></div>
+<div id="players"></div>
+<div id="lobby"><div style="font-size:42px;">🃏</div><h2>Card Game</h2><div id="linfo"></div><div class="lplayers" id="lplayers"></div><button class="lstbtn" id="lstbtn" onclick="hostStart()" disabled>🚀 Start</button><div style="font-size:11px;color:#555;margin-top:8px;" id="lwait"></div></div>
+<div id="table"><div id="round-info"></div><div id="table-cards"></div></div>
+<div id="result"></div>
+<div id="actions"></div>
+<div id="hand-area"><div id="hand-label">Your Cards</div><div id="hand"></div></div>
+</div>
+<script>
+const tg=window.Telegram?.WebApp;if(tg){tg.expand();tg.ready();}
+if(!tg?.initData||!tg.initDataUnsafe?.user?.id){document.getElementById('blocked').style.display='flex';throw new Error('no auth');}
+document.getElementById('app').style.display='flex';
+const API=location.origin;
+const sp=new URLSearchParams(location.search).get('tgWebAppStartParam')||tg.initDataUnsafe?.start_param||'';
+const GID=sp.replace('wcards_','').replace(/_0_/g,':');
+async function rpc(m,p,b){try{const o={method:m,headers:{'X-Init-Data':tg.initData,'Content-Type':'application/json'}};if(b)o.body=JSON.stringify(b);const r=await fetch(API+p,o);return JSON.parse(await r.text());}catch{return{ok:false,error:'Network error'};}}
+
+let S=null,selectedCard=null,pollId=null;
+
+function isRed(suit){return suit==='♥'||suit==='♦';}
+
+function renderLobby(){
+    document.getElementById('lobby').style.display='flex';
+    document.getElementById('table').style.display='none';
+    document.getElementById('hand-area').style.display='none';
+    document.getElementById('actions').innerHTML='';
+    document.getElementById('result').style.display='none';
+    let pl='';S.players.forEach((p,i)=>pl+=`<div>${p.isMe?'⭐':'👤'} ${p.name}${i===0?' (Host)':''} — ${p.score} pts</div>`);
+    document.getElementById('lplayers').innerHTML=pl;
+    document.getElementById('linfo').textContent=`$${S.players.length>0?S.players[0].score:0} bet • ${S.playerCount} players`;
+    const btn=document.getElementById('lstbtn');
+    if(S.isHost){btn.style.display='';btn.disabled=S.playerCount<2;btn.textContent=S.playerCount<2?'Need 2+ players':'🚀 Start Game';}
+    else{btn.style.display='';btn.disabled=true;btn.textContent='Waiting for host...';}
+    document.getElementById('lwait').textContent=S.isHost?'You are host':'Host will start the game';
+}
+
+function renderGame(){
+    document.getElementById('lobby').style.display='none';
+    document.getElementById('table').style.display='flex';
+    document.getElementById('hand-area').style.display='block';
+
+    // Players bar
+    let pb='';
+    S.players.forEach(p=>{
+        let cls='pbadge';
+        if(p.hasPlayed)cls+=' played';
+        pb+=`<span class="${cls}">${p.isMe?'⭐':''} ${p.name}: ${p.score}</span>`;
+    });
+    document.getElementById('players').innerHTML=pb;
+
+    // Round info
+    if(S.status==='playing')document.getElementById('round-info').textContent=`Round ${Math.min(S.round,S.totalRounds)} / ${S.totalRounds}`;
+    else if(S.status==='reveal')document.getElementById('round-info').textContent=`Round ${S.round-1} — Reveal!`;
+    else document.getElementById('round-info').textContent='';
+
+    // Table cards
+    let tc='';
+    S.players.forEach(p=>{
+        const play=S.tablePlays[Object.keys(S.tablePlays).find(k=>S.players.find(pp=>pp.name===p.name))]||null;
+        // Find play by checking if this player played
+        const uid=Object.keys(S.tablePlays).find(k=>{
+            // We don't have uids in tablePlays from client perspective, match by order
+            return false;
+        });
+    });
+    // Simpler: just show all table plays
+    if(Object.keys(S.tablePlays).length>0){
+        for(const [uid,play] of Object.entries(S.tablePlays)){
+            if(play.faceUp){
+                const r=isRed(play.suit)?'red':'';
+                const isWin=S.lastResult?.winnerNames?.some(n=>true)||false; // simplified
+                tc+=`<div><div class="tcard faceup ${r}"><span class="tsuit">${play.suit}</span><span class="tlabel">${play.label}</span></div></div>`;
+            } else {
+                tc+=`<div><div class="tcard facedown"></div></div>`;
+            }
+        }
+    } else {
+        tc='<div style="color:#444;font-size:13px;">Play a card from your hand</div>';
+    }
+    document.getElementById('table-cards').innerHTML=tc;
+
+    // Result
+    const res=document.getElementById('result');
+    if(S.status==='reveal'&&S.lastResult){
+        res.style.display='block';
+        const plays=Object.entries(S.lastResult.plays).map(([n,c])=>`${n}: ${c.suit}${c.label}`).join(' | ');
+        res.innerHTML=`<b>Round ${S.lastResult.round}:</b> ${plays}<br>🏆 <b>${S.lastResult.winnerNames.join(', ')}</b> wins!`;
+    } else if(S.status==='ended'&&S.winner){
+        res.style.display='block';
+        res.innerHTML=`🏆 <b>GAME OVER!</b><br>${S.winner.join(' & ')} wins!`;
+    } else { res.style.display='none'; }
+
+    // Actions
+    let acts='';
+    if(S.status==='playing'&&!S.iPlayed&&selectedCard!==null){
+        acts=`<button class="abtn green" onclick="playCard()">▶️ Play Card</button>`;
+    }
+    if(S.status==='reveal'){
+        acts=`<button class="abtn blue" onclick="nextRound()">Next Round →</button>`;
+    }
+    document.getElementById('actions').innerHTML=acts;
+
+    // Hand
+    let h='';
+    if(S.myHand){
+        S.myHand.forEach((c,i)=>{
+            const r=isRed(c.suit)?'red':'';
+            const used=c.played?'used':'';
+            const sel=selectedCard===i?'selected':'';
+            h+=`<div class="hcard ${r} ${used} ${sel}" onclick="selectCard(${i},${c.played})" data-i="${i}"><span class="hsuit">${c.suit}</span><span class="hlabel">${c.label}</span></div>`;
+        });
+    }
+    document.getElementById('hand').innerHTML=h;
+    document.getElementById('hand-label').textContent=S.iPlayed?'✅ Card played — waiting for others':'Tap a card to select, then Play';
+}
+
+function selectCard(i,used){
+    if(used||S.iPlayed||S.status!=='playing')return;
+    selectedCard=selectedCard===i?null:i;
+    renderGame();
+    if(tg.HapticFeedback)tg.HapticFeedback.selectionChanged();
+}
+
+async function playCard(){
+    if(selectedCard===null)return;
+    const r=await rpc('POST','/wcards/play',{gameId:GID,cardIndex:selectedCard});
+    if(r.ok){S=r.state;selectedCard=null;renderGame();if(tg.HapticFeedback)tg.HapticFeedback.notificationOccurred('success');}
+    else{alert(r.error);}
+}
+
+async function nextRound(){
+    const r=await rpc('POST','/wcards/next',{gameId:GID});
+    if(r.ok){S=r.state;selectedCard=null;renderGame();}
+}
+
+async function hostStart(){
+    document.getElementById('lstbtn').disabled=true;
+    const r=await rpc('POST','/wcards/start',{gameId:GID});
+    if(r.ok){S=r.state;render();}
+    else{document.getElementById('lwait').textContent=r.error;document.getElementById('lstbtn').disabled=false;}
+}
+
+function render(){
+    if(!S)return;
+    if(S.status==='lobby')renderLobby();
+    else renderGame();
+}
+
+let pollFails=0;
+async function poll(){
+    try{
+        const r=await rpc('GET',`/wcards/state?gameId=${encodeURIComponent(GID)}`);
+        if(r.ok){pollFails=0;S=r.state;render();if(S.status==='ended'){clearInterval(pollId);pollId=null;}}
+        else{pollFails++;document.getElementById('hdr').innerHTML='🃏 '+(r.error||'Error');
+            if(pollFails>10){clearInterval(pollId);pollId=null;}}
+    }catch(e){console.error('poll err:',e);pollFails++;}
+}
+
+async function init(){
+    if(!GID||GID===sp||!GID.startsWith('wc:')){
+        document.getElementById('hdr').innerHTML='🃏 No game found. Use /wcards in a group.';return;
+    }
+    await poll();pollId=setInterval(poll,1000);
+}
+init();
+</script>
+</body>
+</html>

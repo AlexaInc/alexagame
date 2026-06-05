@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mission Center | Alexa Game</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- OnClickA TMA SDK -->
+    <script src="https://js.onclckvd.com/in-stream-ad-admanager/tma.js"></script>
+    <!-- Normal display ads -->
+
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #0c0f1d;
+            --card-bg: rgba(23, 28, 48, 0.7);
+            --accent-glow: #3a4cf0;
+            --accent-pink: #e52e71;
+            --accent-orange: #ff8a00;
+            --text-main: #ffffff;
+            --text-dim: #94a3b8;
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-color);
+            background-image:
+                radial-gradient(circle at 50% -20%, var(--accent-glow), transparent 60%),
+                radial-gradient(circle at 0% 100%, #1a1532, transparent 50%);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin: 0;
+            background: linear-gradient(135deg, #fff 0%, var(--text-dim) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .header p {
+            color: var(--accent-orange);
+            font-weight: 600;
+            margin-top: 5px;
+            text-transform: uppercase;
+            font-size: 14px;
+        }
+
+        .mission-container {
+            width: 100%;
+            max-width: 440px;
+        }
+
+        .mission-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(15px);
+            border-radius: 24px;
+            border: 1px solid var(--glass-border);
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .mission-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 0;
+        }
+
+        .icon-box {
+            width: 56px;
+            height: 56px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .mission-info {
+            flex: 1;
+        }
+
+        .mission-info h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .mission-info p {
+            margin: 4px 0 0;
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+
+        .progress-wrapper {
+            margin: 20px 0;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 16px;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--text-dim);
+        }
+
+        .progress-bar-bg {
+            height: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent-orange), var(--accent-pink));
+            box-shadow: 0 0 15px rgba(229, 46, 113, 0.5);
+            transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .reward-info {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: var(--accent-orange);
+            font-weight: 700;
+            font-size: 20px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: 16px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            background: linear-gradient(135deg, var(--accent-glow) 0%, #202eb2 100%);
+            color: white;
+            box-shadow: 0 10px 20px rgba(58, 76, 240, 0.3);
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 15px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+        }
+
+        #success-view {
+            display: none;
+            text-align: center;
+        }
+
+        .confetti-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            display: block;
+            animation: bounce 1s infinite alternate;
+        }
+
+        @keyframes bounce {
+            from {
+                transform: translateY(0);
+            }
+
+            to {
+                transform: translateY(-20px);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <p>Alexa Game Rewards</p>
+        <h1>Mission Center</h1>
+    </div>
+
+    <div class="mission-container">
+        <div class="mission-card" id="main-view">
+            <div class="mission-item">
+                <div class="icon-box">🎯</div>
+                <div class="mission-info">
+                    <h3>Imperial Task</h3>
+                    <p>Complete a high-priority mission</p>
+                </div>
+            </div>
+
+            <div class="progress-wrapper">
+                <div class="progress-header">
+                    <span>DAILY PROGRESS</span>
+                    <span id="ads-count-text">0 / 50</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <div class="reward-info">
+                <span>REWARD:</span>
+                <span>$200</span>
+            </div>
+
+            <button id="start-btn" class="btn" onclick="startMission()">🎯 Start Mission</button>
+        </div>
+
+        <div class="mission-card" id="success-view">
+            <span class="confetti-icon">🏆</span>
+            <h2 style="margin-bottom: 10px;">MISSION ACCOMPLISHED</h2>
+            <p>Your <span style="color:var(--accent-orange); font-weight:bold;">$200</span> reward has been
+                automatically added!</p>
+            <div id="claim-buttons" style="display: flex; flex-direction: column; gap: 12px; margin-top: 24px;">
+                <button id="next-btn" class="btn" style="margin:0;" onclick="resetForNext()">🔄 WATCH ANOTHER
+                    AD</button>
+                <button class="btn"
+                    style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); box-shadow: none; margin:0;"
+                    onclick="closeApp()">EXIT</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const webapp = window.Telegram.WebApp;
+        webapp.expand();
+        webapp.ready();
+
+        // STRICT TG metadata block
+        if (!webapp || !webapp.initData || !webapp.initDataUnsafe || !webapp.initDataUnsafe.user || !webapp.initDataUnsafe.user.id) {
+            document.body.innerHTML = `
+                <div style="padding:40px 20px; text-align:center; font-family: 'Outfit', sans-serif; background:#0c0f1d; color:#fff; min-height:100vh;">
+                    <h1>🔒 Access Blocked</h1>
+                    <p>This page requires Telegram Mini App launch from /missions in @Alexagamebot.</p>
+                    <p style="font-size:12px;">No valid initData / TG ID.</p>
+                </div>
+            `;
+            throw new Error("Blocked");
+        }
+
+        const API_BASE = window.location.origin;
+        const SPOT_ID = "6120581";
+
+        let triggerAd = null;
+        let adsLeftCount = 0;
+        let totalAds = 50;
+
+        async function fetchStatus() {
+            const initData = webapp.initData;
+            if (!initData) return;
+            try {
+                const res = await fetch(`${API_BASE}/status?type=mission_inpage`, { headers: { 'X-Init-Data': initData } });
+                const data = await res.json();
+                adsLeftCount = data.adsLeft ?? 0;
+                updateUI(adsLeftCount);
+            } catch (e) { console.error(e); }
+        }
+
+        function updateUI(left) {
+            const watched = totalAds - left;
+            document.getElementById('ads-count-text').textContent = `${watched} / ${totalAds}`;
+            document.getElementById('progress-fill').style.width = `${(watched / totalAds) * 100}%`;
+            const btn = document.getElementById('start-btn');
+            if (left <= 0) {
+                btn.disabled = true;
+                btn.textContent = "✅ LIMIT REACHED";
+            } else {
+                btn.disabled = !triggerAd;
+                btn.textContent = triggerAd ? "🎯 START MISSION" : "⌛ LOADING...";
+            }
+        }
+
+        window.initCdTma?.({ id: SPOT_ID })
+            .then(show => {
+                triggerAd = show;
+                fetchStatus();
+            })
+            .catch(e => console.error(e));
+
+        async function startMission() {
+            if (!triggerAd) return;
+            const initData = webapp.initData;
+            if (!initData) return;
+            try {
+                const res = await fetch(`${API_BASE}/status?type=mission_inpage`, { headers: { 'X-Init-Data': initData } });
+                if (!res.ok) { alert("Verification error"); return; }
+                const data = await res.json();
+                if (!data.canClaim || (data.adsLeft ?? 0) <= 0) {
+                    alert("Limit reached today. Come back tomorrow after 00:00");
+                    webapp.close();
+                    return;
+                }
+            } catch(e){}
+
+            document.getElementById('start-btn').disabled = true;
+            document.getElementById('start-btn').textContent = "⌛ DEPLOYING...";
+
+            triggerAd()
+                .then(() => {
+                    handleAdSuccess();
+                })
+                .catch(e => {
+                    document.getElementById('start-btn').disabled = false;
+                    document.getElementById('start-btn').textContent = "🎯 START MISSION";
+                });
+        }
+
+        function handleAdSuccess() {
+            // AUTO CLAIM
+            webapp.sendData("verified_mission_inpage_200");
+
+            document.getElementById('main-view').style.display = 'none';
+            document.getElementById('success-view').style.display = 'block';
+
+            if (webapp.HapticFeedback) webapp.HapticFeedback.notificationOccurred('success');
+
+            if (adsLeftCount <= 1) {
+                document.getElementById('next-btn').style.display = 'none';
+            }
+        }
+
+        function resetForNext() {
+            document.getElementById('success-view').style.display = 'none';
+            document.getElementById('main-view').style.display = 'block';
+            fetchStatus();
+        }
+
+        function closeApp() { webapp.close(); }
+
+        fetchStatus();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Omi</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0d1b2a;color:#fff;font-family:-apple-system,sans-serif;min-height:100vh;display:flex;flex-direction:column;}
+#blocked{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:40px;} #blocked a{color:#3b82f6;}
+#app{display:none;flex:1;flex-direction:column;}
+#hdr{padding:8px;text-align:center;font-size:13px;} #hdr b{color:#f59e0b;}
+#players{display:flex;justify-content:center;gap:6px;padding:4px 8px;flex-wrap:wrap;}
+.pb{padding:3px 8px;border-radius:6px;font-size:10px;font-weight:600;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);}
+.pb.turn{border-color:#f59e0b;background:rgba(245,158,11,.1);}
+.pb.done{border-color:#22c55e;background:rgba(34,197,94,.05);}
+#table{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px;min-height:180px;}
+#trump-info{font-size:13px;margin-bottom:8px;}
+#trick-area{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;min-height:90px;align-items:center;}
+#result{text-align:center;padding:6px;font-size:13px;min-height:20px;color:#fbbf24;}
+/* SVG Card */
+.card-wrap{cursor:pointer;transition:transform .2s;display:inline-block;}
+.card-wrap:active{transform:translateY(-6px) scale(1.03);}
+.card-wrap.sel{transform:translateY(-10px);filter:drop-shadow(0 4px 12px rgba(245,158,11,.4));}
+.card-wrap.used{opacity:.2;pointer-events:none;}
+.card-back{width:55px;height:80px;border-radius:6px;background:linear-gradient(135deg,#1e3a8a,#1e40af);border:2px solid #3b82f6;display:flex;align-items:center;justify-content:center;font-size:22px;}
+#hand-area{padding:8px 8px 20px;background:linear-gradient(to top,rgba(0,0,0,.3),transparent);}
+#hand-label{text-align:center;font-size:10px;color:#555;margin-bottom:4px;}
+#hand{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;}
+#actions{display:flex;justify-content:center;gap:8px;padding:4px;flex-wrap:wrap;}
+.abtn{padding:8px 20px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;}
+.abtn.g{background:#22c55e;} .abtn.b{background:#3b82f6;} .abtn.r{background:#ef4444;}
+.abtn:disabled{opacity:.3;}
+/* Trump chooser */
+#trump-choose{display:none;text-align:center;padding:16px;}
+.suit-btn{width:50px;height:50px;border-radius:10px;border:2px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);font-size:28px;cursor:pointer;margin:4px;transition:.2s;}
+.suit-btn:hover{background:rgba(255,255,255,.1);border-color:#f59e0b;}
+/* Lobby */
+#lobby{display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;}
+.lbtn{padding:12px 30px;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(135deg,#22c55e,#16a34a);margin:6px;}
+.lbtn:disabled{opacity:.3;}
+</style>
+</head>
+<body>
+<div id="blocked"><div style="font-size:48px;margin-bottom:16px;">🔒</div><h2>Access Blocked</h2><p>Open from <a href="https://t.me/Alexagamebot">@Alexagamebot</a> via <b>/omi</b></p></div>
+<div id="app" style="display:none;">
+<div id="hdr">🃏 <b>Omi</b></div>
+<div id="players"></div>
+<div id="lobby"><div style="font-size:42px;">🃏</div><h2>Omi</h2><div id="lpl"></div><button class="lbtn" id="lbtn" onclick="hostStart()" disabled>🚀 Start</button><div style="font-size:10px;color:#555;margin-top:6px;" id="lwait"></div></div>
+<div id="trump-choose"><p style="margin-bottom:10px;font-size:14px;font-weight:700;">Choose Trump Suit:</p><button class="suit-btn" onclick="pickTrump('♠')">♠</button><button class="suit-btn" onclick="pickTrump('♥')">♥</button><button class="suit-btn" onclick="pickTrump('♦')">♦</button><button class="suit-btn" onclick="pickTrump('♣')">♣</button></div>
+<div id="table"><div id="trump-info"></div><div id="trick-area"></div></div>
+<div id="result"></div>
+<div id="actions"></div>
+<div id="hand-area"><div id="hand-label">Your Cards</div><div id="hand"></div></div>
+</div>
+<script>
+const tg=window.Telegram?.WebApp;if(tg){tg.expand();tg.ready();}
+if(!tg?.initData||!tg.initDataUnsafe?.user?.id){document.getElementById('blocked').style.display='flex';throw new Error('no auth');}
+document.getElementById('app').style.display='flex';
+const API=location.origin;
+const sp=new URLSearchParams(location.search).get('tgWebAppStartParam')||tg.initDataUnsafe?.start_param||'';
+const GID=sp.replace('omi_','').replace(/_0_/g,':');
+async function rpc(m,p,b){try{const o={method:m,headers:{'X-Init-Data':tg.initData,'Content-Type':'application/json'}};if(b)o.body=JSON.stringify(b);const r=await fetch(API+p,o);return JSON.parse(await r.text());}catch{return{ok:false,error:'Network'};}}
+
+let S=null,sel=null,pollId=null;
+
+// SVG Card generator
+function cardSVG(label, suit, w=55, h=80) {
+    const red = suit==='♥'||suit==='♦';
+    const fill = red ? '#dc2626' : '#1a1a1a';
+    return `<svg width="${w}" height="${h}" viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="1" width="53" height="78" rx="5" fill="white" stroke="#d1d5db" stroke-width="1.5"/>
+        <text x="6" y="16" font-size="12" font-weight="800" fill="${fill}" font-family="sans-serif">${label}</text>
+        <text x="6" y="28" font-size="11" fill="${fill}" font-family="sans-serif">${suit}</text>
+        <text x="27.5" y="50" font-size="22" text-anchor="middle" fill="${fill}" font-family="sans-serif">${suit}</text>
+        <text x="49" y="74" font-size="12" font-weight="800" fill="${fill}" text-anchor="end" font-family="sans-serif" transform="rotate(180,49,68)">${label}</text>
+    </svg>`;
+}
+
+function cardBackSVG(w=55,h=80) {
+    return `<svg width="${w}" height="${h}" viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="1" width="53" height="78" rx="5" fill="#1e3a8a" stroke="#3b82f6" stroke-width="1.5"/>
+        <rect x="6" y="6" width="43" height="68" rx="3" fill="none" stroke="#60a5fa" stroke-width="0.5" stroke-dasharray="3 2"/>
+        <text x="27.5" y="45" font-size="16" text-anchor="middle" fill="#60a5fa" font-family="sans-serif">🂠</text>
+    </svg>`;
+}
+
+function renderLobby(){
+    document.getElementById('lobby').style.display='flex';
+    document.getElementById('table').style.display='none';
+    document.getElementById('hand-area').style.display='none';
+    document.getElementById('trump-choose').style.display='none';
+    document.getElementById('actions').innerHTML='';
+    let pl='';S.players.forEach((p,i)=>pl+=`<div>${p.isMe?'⭐':'👤'} ${p.name}${i===0?' (Host)':''}</div>`);
+    document.getElementById('lpl').innerHTML=pl;
+    const btn=document.getElementById('lbtn');
+    btn.style.display='';btn.disabled=!S.isHost||S.playerCount<2;
+    btn.textContent=S.playerCount<2?'Need 2+':'🚀 Start';
+    document.getElementById('lwait').textContent=S.isHost?'You are host':'Waiting for host';
+}
+
+function renderTrumpChoice(){
+    document.getElementById('lobby').style.display='none';
+    document.getElementById('table').style.display='none';
+    document.getElementById('hand-area').style.display='block';
+    if(S.players[0]?.isMe){
+        document.getElementById('trump-choose').style.display='block';
+    } else {
+        document.getElementById('trump-choose').style.display='none';
+        document.getElementById('result').textContent='Waiting for '+S.players[0]?.name+' to choose trump...';
+    }
+    renderHand();
+}
+
+function renderGame(){
+    document.getElementById('lobby').style.display='none';
+    document.getElementById('table').style.display='flex';
+    document.getElementById('hand-area').style.display='block';
+    document.getElementById('trump-choose').style.display='none';
+
+    // Players
+    let pb='';S.players.forEach(p=>{
+        let c='pb';if(p.isMe&&S.isMyTurn)c+=' turn';else if(p.hasPlayed)c+=' done';
+        pb+=`<span class="${c}">${p.isMe?'⭐':''} ${p.name}: ${p.tricks}T ${p.cardCount}🃏</span>`;
+    });
+    document.getElementById('players').innerHTML=pb;
+
+    // Trump
+    document.getElementById('trump-info').innerHTML=`Trump: <b style="font-size:18px;">${S.trump||'?'}</b> | Round: ${S.round}/${S.totalTricks}`;
+
+    // Trick area
+    let ta='';
+    if(S.trickCards.length>0){
+        S.trickCards.forEach(t=>{
+            ta+=`<div style="text-align:center;"><div class="card-wrap">${cardSVG(t.card.label,t.card.suit)}</div><div style="font-size:9px;color:#888;margin-top:2px;">${t.name}</div></div>`;
+        });
+    } else if(S.lastTrick){
+        S.lastTrick.plays.forEach(t=>{
+            const cls=t.isWinner?'style="border:2px solid #f59e0b;border-radius:8px;"':'';
+            ta+=`<div style="text-align:center;"><div class="card-wrap" ${cls}>${cardSVG(t.card.label,t.card.suit)}</div><div style="font-size:9px;color:${t.isWinner?'#f59e0b':'#888'};margin-top:2px;">${t.name}${t.isWinner?' 🏆':''}</div></div>`;
+        });
+    } else {
+        ta='<div style="color:#444;font-size:12px;">Play a card</div>';
+    }
+    document.getElementById('trick-area').innerHTML=ta;
+
+    // Result
+    if(S.status==='ended'&&S.winner){
+        document.getElementById('result').innerHTML=`🏆 <b>${S.winner.join(' & ')}</b> wins!`;
+    } else if(S.lastTrick){
+        document.getElementById('result').textContent=`Last trick: ${S.lastTrick.winnerName} won`;
+    } else document.getElementById('result').textContent='';
+
+    // Actions
+    let acts='';
+    if(S.isMyTurn&&sel!==null) acts=`<button class="abtn g" onclick="playCard()">▶️ Play Card</button>`;
+    document.getElementById('actions').innerHTML=acts;
+
+    renderHand();
+}
+
+function renderHand(){
+    let h='';
+    if(S.myHand){
+        S.myHand.forEach((c,i)=>{
+            const s=sel===i?'sel':'';
+            h+=`<div class="card-wrap ${s}" onclick="selCard(${i})">${cardSVG(c.label,c.suit)}</div>`;
+        });
+    }
+    document.getElementById('hand').innerHTML=h;
+    document.getElementById('hand-label').textContent=S.isMyTurn?'▶️ Tap a card to play':'Your Cards';
+}
+
+function selCard(i){
+    if(!S.isMyTurn||S.status!=='playing')return;
+    sel=sel===i?null:i;
+    renderHand();
+    renderGame();
+    if(tg.HapticFeedback)tg.HapticFeedback.selectionChanged();
+}
+
+async function playCard(){
+    if(sel===null)return;
+    const r=await rpc('POST','/omi/play',{gameId:GID,cardIndex:sel});
+    if(r.ok){S=r.state;sel=null;render();}
+    else document.getElementById('result').textContent=r.error||'Error';
+}
+
+async function pickTrump(suit){
+    const r=await rpc('POST','/omi/trump',{gameId:GID,suit});
+    if(r.ok){S=r.state;render();}
+    else document.getElementById('result').textContent=r.error||'Error';
+}
+
+async function hostStart(){
+    document.getElementById('lbtn').disabled=true;
+    const r=await rpc('POST','/omi/start',{gameId:GID});
+    if(r.ok){S=r.state;render();}
+    else{document.getElementById('lwait').textContent=r.error;document.getElementById('lbtn').disabled=false;}
+}
+
+function render(){
+    if(!S)return;
+    if(S.status==='lobby')renderLobby();
+    else if(S.status==='chooseTrump')renderTrumpChoice();
+    else renderGame();
+}
+
+let pollFails=0;
+async function poll(){
+    try{
+        const r=await rpc('GET',`/omi/state?gameId=${encodeURIComponent(GID)}`);
+        if(r.ok){pollFails=0;S=r.state;render();if(S.status==='ended'){clearInterval(pollId);pollId=null;}}
+        else{pollFails++;if(pollFails>10){clearInterval(pollId);pollId=null;}}
+    }catch{pollFails++;}
+}
+
+async function init(){
+    if(!GID||GID===sp||!GID.startsWith('omi:')){document.getElementById('hdr').innerHTML='🃏 No game. Use /omi in group.';return;}
+    await poll();pollId=setInterval(poll,1000);
+}
+init();
+</script>
+</body>
+</html>

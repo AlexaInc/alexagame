@@ -1,10 +1,16 @@
+/**
+ * Connect 4 — 8×8 inline button board
+ * Gravity-based: pieces drop to lowest empty row
+ * Win by getting 4 in a row (horizontal, vertical, diagonal)
+ * 🔴 = player 1, 🟡 = player 2, . = empty
+ */
 class Connect4 {
     constructor(player1, bet) {
         this.players = [player1];
+        this.names = {};
         this.bet = bet;
-        this.rows = 6;
-        this.cols = 7;
-        this.board = Array(this.rows).fill(null).map(() => Array(this.cols).fill(null));
+        this.size = 8;
+        this.board = Array(this.size).fill(null).map(() => Array(this.size).fill(null));
         this.turn = 0;
         this.status = 'lobby';
     }
@@ -18,40 +24,54 @@ class Connect4 {
         return false;
     }
 
+    setName(userId, name) { this.names[userId] = name; }
+    getName(userId) { return this.names[userId] || 'Player'; }
+
+    // In connect4, user taps any cell in a column — piece drops to bottom
     makeMove(userId, col) {
         if (this.status !== 'playing') return false;
         if (this.players[this.turn] !== userId) return false;
-        if (col < 0 || col >= this.cols) return false;
-
-        for (let r = this.rows - 1; r >= 0; r--) {
+        if (col < 0 || col >= this.size) return false;
+        // Find lowest empty row in this column
+        for (let r = this.size - 1; r >= 0; r--) {
             if (this.board[r][col] === null) {
-                this.board[r][col] = this.turn === 0 ? '🔴' : '🟡';
+                this.board[r][col] = this.turn === 0 ? 'r' : 'y';
                 this.turn = 1 - this.turn;
                 return true;
             }
         }
-        return false;
+        return false; // column full
     }
 
     checkWinner() {
-        const b = this.board;
-        // Horizontal, Vertical, Diagonal checks
-        for (let r = 0; r < this.rows; r++) {
-            for (let c = 0; c < this.cols; c++) {
-                const p = b[r][c];
+        for (let r = 0; r < this.size; r++) {
+            for (let c = 0; c < this.size; c++) {
+                const p = this.board[r][c];
                 if (!p) continue;
-                // Right
-                if (c + 3 < this.cols && p === b[r][c+1] && p === b[r][c+2] && p === b[r][c+3]) return this.players[p === '🔴' ? 0 : 1];
-                // Down
-                if (r + 3 < this.rows && p === b[r+1][c] && p === b[r+2][c] && p === b[r+3][c]) return this.players[p === '🔴' ? 0 : 1];
-                // Diagonal Down-Right
-                if (r + 3 < this.rows && c + 3 < this.cols && p === b[r+1][c+1] && p === b[r+2][c+2] && p === b[r+3][c+3]) return this.players[p === '🔴' ? 0 : 1];
-                // Diagonal Down-Left
-                if (r + 3 < this.rows && c - 3 >= 0 && p === b[r+1][c-1] && p === b[r+2][c-2] && p === b[r+3][c-3]) return this.players[p === '🔴' ? 0 : 1];
+                if (c + 3 < this.size &&
+                    p === this.board[r][c+1] && p === this.board[r][c+2] && p === this.board[r][c+3])
+                    return this.players[p === 'r' ? 0 : 1];
+                if (r + 3 < this.size &&
+                    p === this.board[r+1][c] && p === this.board[r+2][c] && p === this.board[r+3][c])
+                    return this.players[p === 'r' ? 0 : 1];
+                if (r + 3 < this.size && c + 3 < this.size &&
+                    p === this.board[r+1][c+1] && p === this.board[r+2][c+2] && p === this.board[r+3][c+3])
+                    return this.players[p === 'r' ? 0 : 1];
+                if (r + 3 < this.size && c - 3 >= 0 &&
+                    p === this.board[r+1][c-1] && p === this.board[r+2][c-2] && p === this.board[r+3][c-3])
+                    return this.players[p === 'r' ? 0 : 1];
             }
         }
+        // Draw — top row full
         if (!this.board[0].includes(null)) return 'draw';
         return null;
+    }
+
+    cellEmoji(r, c) {
+        const p = this.board[r][c];
+        if (p === 'r') return '🔴';
+        if (p === 'y') return '🟡';
+        return '.';
     }
 }
 

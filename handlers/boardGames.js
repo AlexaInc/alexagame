@@ -3,35 +3,53 @@ const User = require('../models/User');
 const TicTacToe = require('../games/TicTacToe');
 const Connect4 = require('../games/Connect4');
 const sessions = require('../games/sessions');
+const { editMsg } = require('../utils/editMsg');
+const { getName } = require('../utils/getName');
 
 const startXOX = async (client, event) => {
     const bet = parseInt(event.message.message.split(" ")[1]) || 100;
-    const userId = event.senderId.toString();
-    const gameId = `xox_${userId}_${Date.now()}`;
-    
-    sessions.set(gameId, new TicTacToe(userId, bet));
+    const userId = event.message.senderId.toString();
+    const gameId = `xox:${userId}:${Date.now()}`;
+    const name = await getName(client, userId);
+    const game = new TicTacToe(userId, bet);
+    sessions.set(gameId, game);
 
-    await client.sendMessage(event.chatId, {
-        message: `❌⭕ **TIC-TAC-TOE**\nBet: $${bet}\nCreator: ${userId}\n\nWaiting for opponent to join...`,
+    const sent = await client.sendMessage(event.chatId, {
+        message: `❌⭕ <b>TIC-TAC-TOE</b>\nBet: $${bet} each (Pot: $${bet*2})\n${name} is waiting for opponent...`,
         buttons: client.buildReplyMarkup([
-            [Api.KeyboardButtonCallback({ text: "Join Game", data: `xox_join_${gameId}` })]
+            [new Api.KeyboardButtonCallback({ text: "Join Game", data: Buffer.from(`xjoin|${gameId}`) })]
         ])
     });
+
+    game._lobbyTimer = setTimeout(async () => {
+        const g = sessions.get(gameId);
+        if (!g || g.status !== 'lobby') return;
+        sessions.delete(gameId);
+        try { await editMsg(client, event.chatId, sent.id, `❌⭕ <b>TIC-TAC-TOE</b>\n⏳ Lobby expired. No opponent joined.`, null); } catch (e) {}
+    }, 60000);
 };
 
 const startC4 = async (client, event) => {
     const bet = parseInt(event.message.message.split(" ")[1]) || 200;
-    const userId = event.senderId.toString();
-    const gameId = `c4_${userId}_${Date.now()}`;
-    
-    sessions.set(gameId, new Connect4(userId, bet));
+    const userId = event.message.senderId.toString();
+    const gameId = `c4:${userId}:${Date.now()}`;
+    const name = await getName(client, userId);
+    const game = new Connect4(userId, bet);
+    sessions.set(gameId, game);
 
-    await client.sendMessage(event.chatId, {
-        message: `🔴🟡 **CONNECT FOUR**\nBet: $${bet}\nCreator: ${userId}\n\nWaiting for opponent...`,
+    const sent = await client.sendMessage(event.chatId, {
+        message: `🔴🟡 <b>CONNECT FOUR</b>\nBet: $${bet} each (Pot: $${bet*2})\n${name} is waiting for opponent...`,
         buttons: client.buildReplyMarkup([
-            [Api.KeyboardButtonCallback({ text: "Join Game", data: `c4_join_${gameId}` })]
+            [new Api.KeyboardButtonCallback({ text: "Join Game", data: Buffer.from(`cjoin|${gameId}`) })]
         ])
     });
+
+    game._lobbyTimer = setTimeout(async () => {
+        const g = sessions.get(gameId);
+        if (!g || g.status !== 'lobby') return;
+        sessions.delete(gameId);
+        try { await editMsg(client, event.chatId, sent.id, `🔴🟡 <b>CONNECT FOUR</b>\n⏳ Lobby expired. No opponent joined.`, null); } catch (e) {}
+    }, 60000);
 };
 
 module.exports = { startXOX, startC4 };

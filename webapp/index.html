@@ -3,209 +3,648 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Reward Center</title>
+    <title>Alexa Game</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+// ── Route startapp params to correct game pages BEFORE main app loads ──
+(function(){
+    var sp = '';
+    // Check URL param first
+    try { sp = new URLSearchParams(window.location.search).get('tgWebAppStartParam') || ''; } catch(e){}
+    // Fallback: check TG WebApp start_param
+    if (!sp) try { sp = window.Telegram.WebApp.initDataUnsafe.start_param || ''; } catch(e){}
+    // Route to game pages
+    if (sp.startsWith('omi_')) {
+        window.location.replace('omi.html?tgWebAppStartParam=' + sp);
+    }
+    if (sp.startsWith('wcards_')) {
+        window.location.replace('cards.html?tgWebAppStartParam=' + sp);
+    }
+    if (sp.startsWith('carrom_')) {
+        window.location.replace('carrom.html?tgWebAppStartParam=' + sp);
+    }
+})();
+</script>
+    <!-- Rewarded/TMA ads (for daily/mission claims) -->
+    <script async src="https://js.onclckmn.com/static/onclicka.js" data-admpid="443657"></script>
+    <script src="https://js.onclckvd.com/in-stream-ad-admanager/tma.js"></script>
     <style>
-        :root {
-            --tg-bg: var(--tg-theme-bg-color, #0e1621);
-            --tg-text: var(--tg-theme-text-color, #ffffff);
-            --tg-hint: var(--tg-theme-hint-color, #708499);
-            --tg-link: var(--tg-theme-link-color, #2481cc);
-            --tg-button: var(--tg-theme-button-color, #2481cc);
-            --tg-button-text: var(--tg-theme-button-text-color, #ffffff);
-            --tg-secondary: var(--tg-theme-secondary-bg-color, #17212b);
+        *{margin:0;padding:0;box-sizing:border-box;}
+        :root{
+            --bg:#0a0e1a;--card:#141929;--card2:#1a2035;
+            --accent:#3b82f6;--green:#22c55e;--orange:#f59e0b;--red:#ef4444;
+            --text:#f1f5f9;--dim:#64748b;--border:rgba(255,255,255,.08);
+            --radius:16px;
+        }
+        body{
+            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+            background:var(--bg);color:var(--text);
+            min-height:100vh;display:flex;flex-direction:column;
+            -webkit-user-select:none;user-select:none;
+            padding-bottom:72px;
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--tg-bg);
-            color: var(--tg-text);
-            margin: 0;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
+        /* ── Top Header ── */
+        .top-bar{
+            display:flex;align-items:center;justify-content:space-between;
+            padding:14px 16px 8px;
+        }
+        .top-bar .logo{font-size:18px;font-weight:800;letter-spacing:-.5px;}
+        .top-bar .logo span{color:var(--accent);}
+        .top-bar .coins{
+            background:var(--card);border:1px solid var(--border);
+            border-radius:20px;padding:6px 14px;font-size:13px;font-weight:700;
+            display:flex;align-items:center;gap:6px;
         }
 
-        .header {
-            text-align: center;
-            margin-bottom: 20px;
+        /* ── Bottom Tab Bar ── */
+        .tab-bar{
+            position:fixed;bottom:0;left:0;right:0;
+            background:var(--card);border-top:1px solid var(--border);
+            display:flex;z-index:100;
+            padding:6px 0 env(safe-area-inset-bottom,8px);
+        }
+        .tab-bar .tab{
+            flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+            padding:8px 0;cursor:pointer;opacity:.45;transition:.2s;font-size:10px;font-weight:600;
+        }
+        .tab-bar .tab.active{opacity:1;color:var(--accent);}
+        .tab-bar .tab .ico{font-size:20px;}
+
+        /* ── Pages ── */
+        .page{display:none;flex-direction:column;gap:14px;padding:8px 16px 16px;flex:1;}
+        .page.active{display:flex;}
+
+        /* ── Reward Cards ── */
+        .rw-card{
+            background:var(--card);border:1px solid var(--border);
+            border-radius:var(--radius);padding:18px;
+            display:flex;align-items:center;gap:14px;
+        }
+        .rw-card .rw-icon{font-size:36px;flex-shrink:0;}
+        .rw-card .rw-body{flex:1;min-width:0;}
+        .rw-card .rw-title{font-size:15px;font-weight:700;margin-bottom:2px;}
+        .rw-card .rw-sub{font-size:12px;color:var(--dim);}
+        .rw-card .rw-amount{font-size:20px;font-weight:800;color:var(--orange);margin:4px 0;}
+        .rw-btn{
+            width:100%;padding:11px;border:none;border-radius:12px;
+            font-size:13px;font-weight:700;cursor:pointer;color:#fff;
+            transition:.15s;margin-top:6px;
+        }
+        .rw-btn.blue{background:var(--accent);}
+        .rw-btn.green{background:var(--green);}
+        .rw-btn.gray{background:#334155;color:var(--dim);cursor:default;}
+        .rw-btn:disabled{opacity:.5;cursor:not-allowed;}
+
+        /* ── Section headers ── */
+        .section-hdr{
+            font-size:14px;font-weight:700;color:var(--dim);
+            text-transform:uppercase;letter-spacing:1px;margin-top:6px;
         }
 
-        .header h1 { font-size: 20px; margin: 0; }
-        .header p { font-size: 13px; color: var(--tg-hint); margin: 5px 0 0; }
+        /* ── Leaderboard preview buttons ── */
+        .lb-btns{display:flex;flex-direction:column;gap:8px;}
+        .lb-link{
+            background:var(--card);border:1px solid var(--border);
+            border-radius:14px;padding:14px 16px;
+            display:flex;align-items:center;justify-content:space-between;
+            cursor:pointer;transition:.15s;
+        }
+        .lb-link:active{transform:scale(.98);background:var(--card2);}
+        .lb-link .ll-left{display:flex;align-items:center;gap:10px;}
+        .lb-link .ll-icon{font-size:22px;}
+        .lb-link .ll-text{font-size:14px;font-weight:600;}
+        .lb-link .ll-arrow{color:var(--dim);font-size:18px;}
 
-        /* Ad Slots Placeholder */
-        .ad-slot {
-            width: 100%;
-            min-height: 100px;
-            background: var(--tg-secondary);
-            border-radius: 10px;
-            margin: 10px 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid rgba(255,255,255,0.1);
-            overflow: hidden;
+        /* ── Leaderboard Page ── */
+        .lb-tabs{
+            display:flex;gap:6px;padding:2px;background:var(--card);
+            border-radius:12px;border:1px solid var(--border);
+        }
+        .lb-tab{
+            flex:1;padding:9px 4px;border:none;background:none;
+            color:var(--dim);font-size:12px;font-weight:700;
+            border-radius:10px;cursor:pointer;transition:.15s;text-align:center;
+        }
+        .lb-tab.active{background:var(--accent);color:#fff;}
+
+        .lb-type-tabs{
+            display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;
+            -webkit-overflow-scrolling:touch;
+        }
+        .lb-type-tabs::-webkit-scrollbar{display:none;}
+        .lb-type-btn{
+            padding:8px 14px;border:1px solid var(--border);background:var(--card);
+            color:var(--dim);font-size:12px;font-weight:600;
+            border-radius:20px;cursor:pointer;white-space:nowrap;transition:.15s;flex-shrink:0;
+        }
+        .lb-type-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+        .lb-list{display:flex;flex-direction:column;gap:4px;}
+        .lb-row{
+            display:flex;align-items:center;padding:12px 14px;
+            background:var(--card);border:1px solid var(--border);
+            border-radius:12px;gap:12px;
+        }
+        .lb-row.me{border-color:var(--accent);background:rgba(59,130,246,.08);}
+        .lb-rank{
+            width:28px;font-size:14px;font-weight:800;text-align:center;flex-shrink:0;
+        }
+        .lb-rank.gold{color:#fbbf24;} .lb-rank.silver{color:#94a3b8;} .lb-rank.bronze{color:#cd7f32;}
+        .lb-info{flex:1;min-width:0;}
+        .lb-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .lb-stat{font-size:11px;color:var(--dim);}
+        .lb-val{font-size:15px;font-weight:800;color:var(--orange);flex-shrink:0;}
+        .lb-empty{text-align:center;color:var(--dim);padding:30px 0;font-size:13px;}
+
+        /* ── Wallet Page ── */
+        .wallet-hero{
+            background:linear-gradient(135deg,#1e3a5f 0%,#0f1b2d 100%);
+            border:1px solid var(--border);border-radius:var(--radius);
+            padding:24px 20px;text-align:center;
+        }
+        .wallet-hero .wh-label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;}
+        .wallet-hero .wh-amount{font-size:36px;font-weight:800;margin:6px 0;}
+        .wallet-hero .wh-sub{font-size:13px;color:var(--dim);}
+        .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+        .stat-box{
+            background:var(--card);border:1px solid var(--border);
+            border-radius:14px;padding:14px;text-align:center;
+        }
+        .stat-box .sb-val{font-size:20px;font-weight:800;}
+        .stat-box .sb-label{font-size:11px;color:var(--dim);margin-top:2px;}
+
+        /* ── Reward Flow Overlay ── */
+        .overlay{
+            display:none;position:fixed;inset:0;z-index:200;
+            background:rgba(0,0,0,.85);backdrop-filter:blur(6px);
+            flex-direction:column;align-items:center;justify-content:center;padding:20px;
+        }
+        .overlay.show{display:flex;}
+        .ov-card{
+            background:var(--card);border:1px solid var(--border);
+            border-radius:20px;padding:28px 24px;text-align:center;
+            width:100%;max-width:360px;
+        }
+        .ov-card .ov-icon{font-size:52px;margin-bottom:10px;}
+        .ov-card .ov-title{font-size:18px;font-weight:700;margin-bottom:6px;}
+        .ov-card .ov-sub{font-size:13px;color:var(--dim);margin-bottom:16px;line-height:1.4;}
+        .ov-timer{font-size:48px;font-weight:800;color:var(--orange);}
+        .ov-progress{
+            width:100%;height:6px;background:rgba(255,255,255,.08);
+            border-radius:3px;margin:12px 0 16px;overflow:hidden;
+        }
+        .ov-progress-bar{height:100%;width:0%;background:var(--orange);transition:width 1s linear;}
+        .ov-close{
+            margin-top:14px;background:none;border:1px solid var(--border);
+            color:var(--dim);padding:10px 20px;border-radius:10px;
+            font-size:12px;cursor:pointer;
         }
 
-        .ad-label {
-            font-size: 10px;
-            color: var(--tg-hint);
-            position: absolute;
-            background: rgba(0,0,0,0.3);
-            padding: 2px 5px;
-            border-radius: 4px;
-        }
+        /* ── Ad Slots ── */
 
-        .main-card {
-            width: 100%;
-            background: var(--tg-secondary);
-            border-radius: 15px;
-            padding: 20px;
-            text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            margin-top: 10px;
-        }
-
-        .timer-display {
-            font-size: 24px;
-            font-weight: bold;
-            color: var(--tg-button);
-            margin: 15px 0;
-        }
-
-        .progress-container {
-            width: 100%;
-            height: 8px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 4px;
-            margin-bottom: 20px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: var(--tg-button);
-            width: 0%;
-            transition: width 1s linear;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 15px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
-
-        #start-btn {
-            background-color: var(--tg-button);
-            color: var(--tg-button-text);
-        }
-
-        #claim-btn {
-            background-color: #31b545;
-            color: white;
-            display: none;
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        /* Responsive Ad sizing */
-        #banner-1 { height: 60px; }
-        #banner-2 { height: 250px; }
+        @keyframes fadeIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+        .fade-in{animation:fadeIn .3s ease;}
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>💎 Reward Center</h1>
-        <p>Stay on this page to verify and earn</p>
-    </div>
+<!-- ── Top Bar ── -->
+<div class="top-bar">
+    <div class="logo">Alexa<span>Game</span></div>
+    <div class="coins" id="hdr-coins">💰 $---</div>
+</div>
 
-    <!-- TOP AD BANNER -->
-    <div class="ad-slot" id="banner-1">
-        <span class="ad-label">Advertisement</span>
-        <!-- PASTE YOUR TOP BANNER SCRIPT HERE -->
-    </div>
-
-    <div class="main-card">
-        <div id="status-text">Click the button below to start the 30-second verification.</div>
-        
-        <div id="timer-ui" style="display: none;">
-            <div class="timer-display" id="sec">30</div>
-            <div class="progress-container">
-                <div id="progress" class="progress-fill"></div>
-            </div>
-            <p style="font-size: 12px; color: var(--tg-hint);">Verification in progress... Please view the ads below.</p>
+<!-- ════════════ PAGE: REWARD ════════════ -->
+<div class="page active" id="page-reward">
+    <!-- Daily Card -->
+    <div class="rw-card">
+        <div class="rw-icon">💎</div>
+        <div class="rw-body">
+            <div class="rw-title">Daily Reward</div>
+            <div class="rw-amount">$3,000 coins</div>
+            <button id="daily-btn" class="rw-btn blue" onclick="openDailyFlow()">🚀 Claim Now</button>
+            <div id="daily-status-text" style="font-size:11px;color:var(--dim);margin-top:4px;"></div>
         </div>
-
-        <button id="start-btn" class="btn" onclick="startVerification()">🚀 Start Verification</button>
-        <button id="claim-btn" class="btn" onclick="claim()">🎁 Claim $3000</button>
     </div>
 
-    <!-- LARGE NATIVE AD / RECTANGLE AD -->
-    <div class="ad-slot" id="banner-2">
-        <span class="ad-label">Advertisement</span>
-        <!-- PASTE YOUR MAIN AD SCRIPT HERE -->
+    <!-- Mission Card -->
+    <div class="rw-card">
+        <div class="rw-icon">🎯</div>
+        <div class="rw-body">
+            <div class="rw-title">Daily Ad Watch Rewards</div>
+            <div class="rw-amount">$200 × 50/day</div>
+            <button id="mission-btn" class="rw-btn blue" onclick="openMissionFlow()">🎯 Watch & Earn</button>
+            <div id="mission-status-text" style="font-size:11px;color:var(--dim);margin-top:4px;"></div>
+        </div>
     </div>
 
-    <!-- FOOTER AD -->
-    <div class="ad-slot" style="height: 100px;">
-        <span class="ad-label">Advertisement</span>
-        <!-- PASTE ANOTHER AD SCRIPT HERE -->
+    <!-- Leaderboard Preview -->
+    <div class="section-hdr">🏆 Leaderboards</div>
+    <div class="lb-btns">
+        <div class="lb-link" onclick="goLeaderboard('bank')">
+            <div class="ll-left"><span class="ll-icon">🏦</span><span class="ll-text">Top Bank Account</span></div>
+            <span class="ll-arrow">›</span>
+        </div>
+        <div class="lb-link" onclick="goLeaderboard('wallet')">
+            <div class="ll-left"><span class="ll-icon">💰</span><span class="ll-text">Top Wallet</span></div>
+            <span class="ll-arrow">›</span>
+        </div>
+        <div class="lb-link" onclick="goLeaderboard('xp')">
+            <div class="ll-left"><span class="ll-icon">⚔️</span><span class="ll-text">Top Users (XP & Kills)</span></div>
+            <span class="ll-arrow">›</span>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════ PAGE: LEADERBOARD ════════════ -->
+<div class="page" id="page-lb">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:2px;">
+        <span style="font-size:22px;cursor:pointer;" onclick="goPage('reward')">←</span>
+        <span style="font-size:16px;font-weight:700;">Leaderboards</span>
     </div>
 
-    <script>
-        const webapp = window.Telegram.WebApp;
-        webapp.expand();
+    <!-- Period tabs -->
+    <div class="lb-tabs">
+        <button class="lb-tab active" data-period="daily" onclick="setPeriod('daily',this)">Daily</button>
+        <button class="lb-tab" data-period="weekly" onclick="setPeriod('weekly',this)">Weekly</button>
+        <button class="lb-tab" data-period="monthly" onclick="setPeriod('monthly',this)">Month</button>
+        <button class="lb-tab" data-period="all" onclick="setPeriod('all',this)">Overall</button>
+    </div>
 
-        let timeLeft = 30;
-        let timerStarted = false;
+    <!-- Type tabs -->
+    <div class="lb-type-tabs">
+        <button class="lb-type-btn active" data-type="wallet" onclick="setLBType('wallet',this)">💰 Wallet</button>
+        <button class="lb-type-btn" data-type="bank" onclick="setLBType('bank',this)">🏦 Bank</button>
+        <button class="lb-type-btn" data-type="xp" onclick="setLBType('xp',this)">✨ XP</button>
+        <button class="lb-type-btn" data-type="kills" onclick="setLBType('kills',this)">💀 Kills</button>
+        <button class="lb-type-btn" data-type="robs" onclick="setLBType('robs',this)">💸 Robs</button>
+    </div>
 
-        function startVerification() {
-            if (timerStarted) return;
-            timerStarted = true;
+    <div class="lb-list" id="lb-list">
+        <div class="lb-empty">Loading...</div>
+    </div>
 
-            document.getElementById('start-btn').style.display = 'none';
-            document.getElementById('status-text').style.display = 'none';
-            document.getElementById('timer-ui').style.display = 'block';
+    </div>
+</div>
 
-            const countdown = setInterval(() => {
-                timeLeft--;
-                document.getElementById('sec').innerText = timeLeft;
-                
-                const progress = ((30 - timeLeft) / 30) * 100;
-                document.getElementById('progress').style.width = progress + '%';
+<!-- ════════════ PAGE: WALLET ════════════ -->
+<div class="page" id="page-wallet">
+    <div class="wallet-hero">
+        <div class="wh-label">Total Balance</div>
+        <div class="wh-amount" id="w-total">$0</div>
+        <div class="wh-sub" id="w-sub">Wallet + Bank</div>
+    </div>
+    <div class="stat-grid">
+        <div class="stat-box"><div class="sb-val" id="w-wallet">$0</div><div class="sb-label">Wallet</div></div>
+        <div class="stat-box"><div class="sb-val" id="w-bank">$0</div><div class="sb-label">Bank</div></div>
+        <div class="stat-box"><div class="sb-val" id="w-level">1</div><div class="sb-label">Level</div></div>
+        <div class="stat-box"><div class="sb-val" id="w-xp">0</div><div class="sb-label">XP</div></div>
+        <div class="stat-box"><div class="sb-val" id="w-kills">0</div><div class="sb-label">Kills</div></div>
+        <div class="stat-box"><div class="sb-val" id="w-robs">0</div><div class="sb-label">Robs</div></div>
+    </div>
 
-                if (timeLeft <= 0) {
-                    clearInterval(countdown);
-                    document.getElementById('timer-ui').style.display = 'none';
-                    document.getElementById('claim-btn').style.display = 'block';
-                    
-                    if (webapp.HapticFeedback) {
-                        webapp.HapticFeedback.notificationOccurred('success');
-                    }
-                }
-            }, 1000);
+    </div>
+</div>
+
+<!-- ════════════ DAILY OVERLAY ════════════ -->
+<div class="overlay" id="ov-daily">
+    <div class="ov-card">
+        <div id="dov-setup">
+            <div class="ov-icon">💎</div>
+            <div class="ov-title">Daily Reward</div>
+            <div class="ov-sub">Watch a short ad, wait 30s, then claim <strong>$3,000</strong></div>
+            <button class="rw-btn blue" id="dov-start-btn" onclick="startDaily()">🚀 Watch Ad & Claim</button>
+        </div>
+        <div id="dov-timer" style="display:none;">
+            <div class="ov-timer" id="dov-sec">30</div>
+            <div class="ov-progress"><div class="ov-progress-bar" id="dov-bar"></div></div>
+            <div class="ov-sub">Verification in progress...</div>
+        </div>
+        <div id="dov-claim" style="display:none;">
+            <button class="rw-btn green" onclick="claimDaily()">🎁 Claim $3,000 Now</button>
+        </div>
+        <div id="dov-done" style="display:none;">
+            <div class="ov-icon">✅</div>
+            <div class="ov-title">Success!</div>
+            <div class="ov-sub"><strong style="color:var(--orange);">$3,000</strong> added to wallet</div>
+        </div>
+        <div id="dov-err" style="display:none;">
+            <div class="ov-icon">❌</div>
+            <div class="ov-sub" id="dov-err-msg" style="color:var(--red);"></div>
+        </div>
+        <button class="ov-close" onclick="closeOverlay('ov-daily')">← Back</button>
+    </div>
+</div>
+
+<!-- ════════════ MISSION OVERLAY ════════════ -->
+<div class="overlay" id="ov-mission">
+    <div class="ov-card">
+        <div id="mov-setup">
+            <div class="ov-icon">🎯</div>
+            <div class="ov-title">Ad Mission</div>
+            <div class="ov-sub">Watch an ad to earn <strong>$200</strong></div>
+            <div id="mov-count" style="font-size:12px;color:var(--dim);margin-bottom:10px;"></div>
+            <button class="rw-btn blue" id="mov-start-btn" onclick="startMission()">🎯 Watch Ad</button>
+        </div>
+        <div id="mov-timer" style="display:none;">
+            <div class="ov-timer" id="mov-sec">30</div>
+            <div class="ov-progress"><div class="ov-progress-bar" id="mov-bar"></div></div>
+            <div class="ov-sub">Verification in progress...</div>
+        </div>
+        <div id="mov-claim" style="display:none;">
+            <button class="rw-btn green" onclick="claimMission()">🎁 Claim $200</button>
+        </div>
+        <div id="mov-done" style="display:none;">
+            <div class="ov-icon">🏆</div>
+            <div class="ov-title">Mission Complete!</div>
+            <div class="ov-sub"><strong>$200</strong> added to wallet</div>
+            <button class="rw-btn blue" style="margin-top:12px;" onclick="resetMission()">Watch Another</button>
+        </div>
+        <div id="mov-err" style="display:none;">
+            <div class="ov-icon">❌</div>
+            <div class="ov-sub" id="mov-err-msg" style="color:var(--red);"></div>
+        </div>
+        <button class="ov-close" onclick="closeOverlay('ov-mission')">← Back</button>
+    </div>
+</div>
+
+<!-- ── Bottom Tab Bar ── -->
+<div class="tab-bar">
+    <div class="tab active" onclick="goPage('reward')">
+        <span class="ico">🎁</span>Reward
+    </div>
+    <div class="tab" onclick="goPage('lb')">
+        <span class="ico">🏆</span>Leaders
+    </div>
+    <div class="tab" onclick="goPage('wallet')">
+        <span class="ico">👤</span>Wallet
+    </div>
+</div>
+
+<script>
+const webapp = window.Telegram.WebApp;
+webapp.expand(); webapp.ready();
+
+if(!webapp||!webapp.initData||!webapp.initDataUnsafe||!webapp.initDataUnsafe.user||!webapp.initDataUnsafe.user.id){
+    document.body.innerHTML=`
+    <div style="padding:50px 20px;text-align:center;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="font-size:48px;margin-bottom:16px;">🔒</div>
+        <h2 style="margin-bottom:8px;">Access Blocked</h2>
+        <p style="color:#64748b;max-width:280px;font-size:14px;line-height:1.5;">
+            Open this app from <a href="https://t.me/Alexagamebot" style="color:#3b82f6;">@Alexagamebot</a> using <strong>/daily</strong> or <strong>/missions</strong>
+        </p>
+    </div>`;
+    throw new Error("No TG");
+}
+
+const API=window.location.origin;
+const myId=webapp.initDataUnsafe.user.id.toString();
+
+// ── API helper ──
+async function api(method,path,body){
+    try{
+        const o={method,headers:{'X-Init-Data':webapp.initData,'Content-Type':'application/json'}};
+        if(body)o.body=JSON.stringify(body);
+        const r=await fetch(API+path,o);
+        const text=await r.text();
+        try{return JSON.parse(text);}catch(e){return{ok:false,error:'Server error'};}
+    }catch(e){return{ok:false,error:'Network error'};}
+}
+
+// ── Ad SDK ──
+const SPOT="6120581"; const INPAGE="6120578";
+let triggerReward=null,triggerInpage=null,triggerMission=null;
+let missionAdsLeft=50;
+
+window.initCdTma?.({id:SPOT}).then(s=>{triggerReward=s;triggerMission=s;}).catch(()=>{});
+window.initCdTma?.({id:INPAGE}).then(s=>{triggerInpage=s;}).catch(()=>{});
+
+// ── Navigation ──
+function goPage(id){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-'+id).classList.add('active');
+    document.querySelectorAll('.tab-bar .tab').forEach((t,i)=>{
+        t.classList.toggle('active',['reward','lb','wallet'][i]===id);
+    });
+    if(id==='lb')loadLeaderboard();
+    if(id==='wallet')loadWallet();
+}
+
+function goLeaderboard(type){
+    goPage('lb');
+    document.querySelectorAll('.lb-type-btn').forEach(b=>b.classList.toggle('active',b.dataset.type===type));
+    currentLBType=type;
+    loadLeaderboard();
+}
+
+// ── Hub status ──
+async function refreshHub(){
+    try{
+        const d=await api('GET','/status?type=daily');
+        const btn=document.getElementById('daily-btn');
+        const st=document.getElementById('daily-status-text');
+        if(!d.canClaim){
+            btn.className='rw-btn gray';btn.textContent='✅ Already Claimed';btn.disabled=true;
+            st.textContent='Come back tomorrow after 00:00';
+        }else{
+            btn.className='rw-btn blue';btn.textContent='🚀 Claim Now';btn.disabled=false;
+            st.textContent='Available now!';
         }
-
-        function claim() {
-            webapp.sendData("verified_daily_ad_high");
-            webapp.close();
+    }catch(e){}
+    try{
+        const m=await api('GET','/status?type=mission_inpage');
+        missionAdsLeft=m.adsLeft??50;
+        const btn=document.getElementById('mission-btn');
+        const st=document.getElementById('mission-status-text');
+        if(missionAdsLeft<=0){
+            btn.className='rw-btn gray';btn.textContent='✅ Limit Reached';btn.disabled=true;
+            st.textContent='50/50 claimed today';
+        }else{
+            btn.className='rw-btn blue';btn.textContent='🎯 Watch & Earn';btn.disabled=false;
+            st.textContent=`${50-missionAdsLeft}/50 claimed · ${missionAdsLeft} left`;
         }
-    </script>
+    }catch(e){}
+    try{
+        const me=await api('GET','/me');
+        if(me.ok){
+            document.getElementById('hdr-coins').textContent='💰 $'+me.user.wallet.toLocaleString();
+        }
+    }catch(e){}
+}
 
-    <!-- Paste your Ad Provider's Auto-Ad or Global Script here if they have one -->
-    <!-- Example: <script src="https://adprovider.com/script.js"></script> -->
+// ── Wallet page ──
+async function loadWallet(){
+    try{
+        const r=await api('GET','/me');
+        if(!r.ok)return;
+        const u=r.user;
+        document.getElementById('w-total').textContent='$'+(u.wallet+u.bank).toLocaleString();
+        document.getElementById('w-wallet').textContent='$'+u.wallet.toLocaleString();
+        document.getElementById('w-bank').textContent='$'+u.bank.toLocaleString();
+        document.getElementById('w-level').textContent=u.level||1;
+        document.getElementById('w-xp').textContent=(u.xp||0).toLocaleString();
+        document.getElementById('w-kills').textContent=u.kills||0;
+        document.getElementById('w-robs').textContent=u.robs||0;
+    }catch(e){}
+}
 
+// ── Leaderboard ──
+let currentLBType='wallet',currentLBPeriod='daily';
+
+function setPeriod(p,el){
+    currentLBPeriod=p;
+    document.querySelectorAll('.lb-tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+    loadLeaderboard();
+}
+function setLBType(t,el){
+    currentLBType=t;
+    document.querySelectorAll('.lb-type-btn').forEach(b=>b.classList.remove('active'));
+    el.classList.add('active');
+    loadLeaderboard();
+}
+
+const valLabels={wallet:'Wallet',bank:'Bank',xp:'XP',kills:'Kills',robs:'Robs'};
+const valIcons={wallet:'💰',bank:'🏦',xp:'✨',kills:'💀',robs:'💸'};
+
+async function loadLeaderboard(){
+    const list=document.getElementById('lb-list');
+    list.innerHTML='<div class="lb-empty">Loading...</div>';
+    try{
+        const r=await api('GET',`/leaderboard?type=${currentLBType}&period=${currentLBPeriod}`);
+        if(!r.ok||!r.leaderboard.length){
+            list.innerHTML='<div class="lb-empty">No data yet for this period</div>';return;
+        }
+        list.innerHTML='';
+        r.leaderboard.forEach((u,i)=>{
+            const rank=i+1;
+            const rc=rank===1?'gold':rank===2?'silver':rank===3?'bronze':'';
+            const isMe=u.userId===myId;
+            const val=u[currentLBType]||0;
+            const prefix=currentLBType==='wallet'||currentLBType==='bank'?'$':'';
+            const sub='Lv.'+u.level+' · '+valIcons[currentLBType]+' '+(prefix)+val.toLocaleString();
+            const div=document.createElement('div');
+            div.className='lb-row fade-in'+(isMe?' me':'');
+            div.style.animationDelay=(i*30)+'ms';
+            div.innerHTML=`
+                <div class="lb-rank ${rc}">${rank<=3?['🥇','🥈','🥉'][rank-1]:rank}</div>
+                <div class="lb-info">
+                    <div class="lb-name">${isMe?'⭐ ':''} @${u.username||'unknown'}</div>
+                    <div class="lb-stat">${sub}</div>
+                </div>
+                <div class="lb-val">${prefix}${val.toLocaleString()}</div>`;
+            list.appendChild(div);
+        });
+    }catch(e){
+        list.innerHTML='<div class="lb-empty">Error loading leaderboard</div>';
+    }
+}
+
+// ── Overlays ──
+function closeOverlay(id){document.getElementById(id).classList.remove('show');refreshHub();}
+
+// ── Daily Flow ──
+function openDailyFlow(){
+    const ov=document.getElementById('ov-daily');
+    ov.classList.add('show');
+    _show('dov-setup');_hide('dov-timer','dov-claim','dov-done','dov-err');
+    document.getElementById('dov-start-btn').disabled=false;
+}
+
+async function startDaily(){
+    if(!triggerReward){alert("Ad loading, try again.");return;}
+    const st=await api('GET','/status?type=daily');
+    if(!st.canClaim){
+        _hide('dov-setup');_show('dov-err');
+        document.getElementById('dov-err-msg').textContent='Already claimed today!';return;
+    }
+    document.getElementById('dov-start-btn').disabled=true;
+    try{
+        await triggerReward();
+    }catch(e){document.getElementById('dov-start-btn').disabled=false;return;}
+    // No 30s wait — go straight to claim after watching ad
+    _hide('dov-setup');_show('dov-claim');
+    if(triggerInpage)triggerInpage().catch(()=>{});
+}
+
+async function claimDaily(){
+    _hide('dov-claim');
+    try{
+        const r=await api('POST','/claim',{type:'daily'});
+        if(r.ok){
+            _show('dov-done');
+            if(webapp.HapticFeedback)webapp.HapticFeedback.notificationOccurred('success');
+            setTimeout(()=>closeOverlay('ov-daily'),2500);
+        }else{
+            _show('dov-err');document.getElementById('dov-err-msg').textContent=r.error||'Failed';
+        }
+    }catch(e){_show('dov-err');document.getElementById('dov-err-msg').textContent='Network error';}
+}
+
+// ── Mission Flow ──
+function openMissionFlow(){
+    const ov=document.getElementById('ov-mission');
+    ov.classList.add('show');
+    _show('mov-setup');_hide('mov-timer','mov-claim','mov-done','mov-err');
+    document.getElementById('mov-count').textContent=`${50-missionAdsLeft}/50 claimed today`;
+    document.getElementById('mov-start-btn').disabled=!triggerMission||missionAdsLeft<=0;
+}
+
+async function startMission(){
+    if(!triggerMission){alert("Ad loading.");return;}
+    const st=await api('GET','/status?type=mission_inpage');
+    if(!st.canClaim||st.adsLeft<=0){
+        _hide('mov-setup');_show('mov-err');
+        document.getElementById('mov-err-msg').textContent='Daily limit reached!';return;
+    }
+    missionAdsLeft=st.adsLeft;
+    document.getElementById('mov-start-btn').disabled=true;
+    try{await triggerMission();}catch(e){document.getElementById('mov-start-btn').disabled=false;return;}
+    _hide('mov-setup');_show('mov-timer');
+    let t=30;
+    document.getElementById('mov-sec').textContent=t;
+    document.getElementById('mov-bar').style.width='0%';
+    const iv=setInterval(()=>{
+        t--;document.getElementById('mov-sec').textContent=t;
+        document.getElementById('mov-bar').style.width=((30-t)/30*100)+'%';
+        if(t<=0){clearInterval(iv);_hide('mov-timer');_show('mov-claim');}
+    },1000);
+}
+
+async function claimMission(){
+    _hide('mov-claim');
+    try{
+        const r=await api('POST','/claim',{type:'mission'});
+        if(r.ok){
+            missionAdsLeft=r.adsLeft??Math.max(0,missionAdsLeft-1);
+            _show('mov-done');
+            if(webapp.HapticFeedback)webapp.HapticFeedback.notificationOccurred('success');
+        }else{
+            _show('mov-err');document.getElementById('mov-err-msg').textContent=r.error||'Failed';
+        }
+    }catch(e){_show('mov-err');document.getElementById('mov-err-msg').textContent='Network error';}
+}
+
+function resetMission(){
+    _show('mov-setup');_hide('mov-done','mov-err','mov-timer','mov-claim');
+    document.getElementById('mov-count').textContent=`${50-missionAdsLeft}/50 claimed today`;
+    document.getElementById('mov-start-btn').disabled=!triggerMission||missionAdsLeft<=0;
+}
+
+// ── Helpers ──
+function _show(...ids){ids.forEach(id=>document.getElementById(id).style.display='block');}
+function _hide(...ids){ids.forEach(id=>document.getElementById(id).style.display='none');}
+
+// ── Init ──
+async function init(){
+    await refreshHub();
+    const p=new URLSearchParams(location.search).get('type');
+    if(p==='daily')setTimeout(()=>openDailyFlow(),300);
+    else if(p==='mission')setTimeout(()=>openMissionFlow(),300);
+    setInterval(refreshHub,30000);
+}
+init();
+</script>
 </body>
 </html>

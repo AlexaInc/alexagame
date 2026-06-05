@@ -1,3 +1,11 @@
+---
+title: Alexagame
+emoji: 🐢
+colorFrom: green
+colorTo: gray
+sdk: docker
+pinned: false
+---
 # Telegram Game Bot
 
 A feature-rich Telegram game bot built with Node.js, GramJS, and MongoDB.
