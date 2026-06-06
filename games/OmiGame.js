@@ -163,6 +163,8 @@ class OmiGame {
     }
 
     getWinners() {
+        // If someone gave up, the remaining player(s) win regardless of tricks.
+        if (this.forfeitWinners) return this.forfeitWinners;
         const n = this.players.length;
         if (n === 2) {
             // Most tricks wins
@@ -178,6 +180,26 @@ class OmiGame {
         if (team0 > team1) return [this.players[0], this.players[2]].filter(Boolean);
         if (team1 > team0) return [this.players[1], this.players[3]].filter(Boolean);
         return this.players;
+    }
+
+    // A player gives up. The remaining players win. Returns false if the player
+    // isn't part of an active game.
+    forfeit(userId) {
+        if (this.status === 'ended') return { error: 'Game already ended' };
+        const quitter = this.players.find(p => p.userId === userId);
+        if (!quitter) return { error: 'Not in this game' };
+        this.forfeitedBy = quitter.name;
+        // Winners = everyone except the quitter (their team in 4-player). If only
+        // the quitter remains for some reason, no winners.
+        if (this.players.length === 4) {
+            const qi = this.players.findIndex(p => p.userId === userId);
+            const winningTeam = (qi % 2 === 0) ? [1, 3] : [0, 2];
+            this.forfeitWinners = winningTeam.map(i => this.players[i]).filter(Boolean);
+        } else {
+            this.forfeitWinners = this.players.filter(p => p.userId !== userId);
+        }
+        this.status = 'ended';
+        return { ok: true };
     }
 
     getState(forUserId) {
@@ -219,6 +241,8 @@ class OmiGame {
             round: this.round,
             totalTricks: this.totalTricks,
             winner: this.status === 'ended' ? this.getWinners().map(p => p.name) : null,
+            forfeitedBy: this.forfeitedBy || null,
+            inGame: pi >= 0,
         };
     }
 }

@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Omi</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="cards-deck.js"></script>
+<script src="giveup.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#0d1b2a;color:#fff;font-family:-apple-system,sans-serif;min-height:100vh;display:flex;flex-direction:column;}
@@ -65,25 +67,20 @@ async function rpc(m,p,b){try{const o={method:m,headers:{'X-Init-Data':tg.initDa
 
 let S=null,sel=null,pollId=null;
 
-// SVG Card generator
+// Give Up: confirm popup then forfeit
+GiveUp.bind({
+    rpc: rpc, path: '/omi/forfeit', gameId: GID, game: 'Omi',
+    onState: (st)=>{ S=st; sel=null; render(); if(pollId&&S.status==='ended'){clearInterval(pollId);pollId=null;} },
+    onError: (m)=>{ document.getElementById('result').textContent=m; }
+});
+
+// SVG Card generator — full playing-card deck (shared cards-deck.js)
 function cardSVG(label, suit, w=55, h=80) {
-    const red = suit==='♥'||suit==='♦';
-    const fill = red ? '#dc2626' : '#1a1a1a';
-    return `<svg width="${w}" height="${h}" viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg">
-        <rect x="1" y="1" width="53" height="78" rx="5" fill="white" stroke="#d1d5db" stroke-width="1.5"/>
-        <text x="6" y="16" font-size="12" font-weight="800" fill="${fill}" font-family="sans-serif">${label}</text>
-        <text x="6" y="28" font-size="11" fill="${fill}" font-family="sans-serif">${suit}</text>
-        <text x="27.5" y="50" font-size="22" text-anchor="middle" fill="${fill}" font-family="sans-serif">${suit}</text>
-        <text x="49" y="74" font-size="12" font-weight="800" fill="${fill}" text-anchor="end" font-family="sans-serif" transform="rotate(180,49,68)">${label}</text>
-    </svg>`;
+    return CardsDeck.getCardSVG(label, suit, { width: w, height: h });
 }
 
 function cardBackSVG(w=55,h=80) {
-    return `<svg width="${w}" height="${h}" viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg">
-        <rect x="1" y="1" width="53" height="78" rx="5" fill="#1e3a8a" stroke="#3b82f6" stroke-width="1.5"/>
-        <rect x="6" y="6" width="43" height="68" rx="3" fill="none" stroke="#60a5fa" stroke-width="0.5" stroke-dasharray="3 2"/>
-        <text x="27.5" y="45" font-size="16" text-anchor="middle" fill="#60a5fa" font-family="sans-serif">🂠</text>
-    </svg>`;
+    return CardsDeck.getCardBackSVG({ width: w, height: h });
 }
 
 function renderLobby(){
@@ -147,7 +144,8 @@ function renderGame(){
 
     // Result
     if(S.status==='ended'&&S.winner){
-        document.getElementById('result').innerHTML=`🏆 <b>${S.winner.join(' & ')}</b> wins!`;
+        const gu=S.forfeitedBy?`🏳️ ${S.forfeitedBy} gave up — `:'';
+        document.getElementById('result').innerHTML=`${gu}🏆 <b>${S.winner.join(' & ')}</b> wins!`;
     } else if(S.lastTrick){
         document.getElementById('result').textContent=`Last trick: ${S.lastTrick.winnerName} won`;
     } else document.getElementById('result').textContent='';
@@ -155,6 +153,8 @@ function renderGame(){
     // Actions
     let acts='';
     if(S.isMyTurn&&sel!==null) acts=`<button class="abtn g" onclick="playCard()">▶️ Play Card</button>`;
+    // Give Up — visible while the game is active and you're a participant
+    if(S.inGame && S.status!=='ended' && S.status!=='lobby') acts+=GiveUp.button();
     document.getElementById('actions').innerHTML=acts;
 
     renderHand();

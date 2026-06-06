@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Carrom Pool</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="giveup.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#1a0e00;color:#fff;font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;overflow-x:hidden;touch-action:none;}
@@ -33,7 +34,7 @@ canvas{display:block;border-radius:6px;margin:14px auto;}
 <body>
 <div id="blocked"><div style="font-size:48px;margin-bottom:16px;">🔒</div><h2>Access Blocked</h2><p>Open from <a href="https://t.me/Alexagamebot">@Alexagamebot</a> via <b>/carrom</b></p></div>
 <div id="wrap" style="display:none;">
-<div id="topbar"><span id="toast"></span><span class="tbtn ct" id="cntb">0/4</span><button class="tbtn st" id="stb" onclick="hs()" disabled style="display:none;">🚀 Start</button></div>
+<div id="topbar"><span id="toast"></span><span class="tbtn ct" id="cntb">0/4</span><button class="tbtn st" id="stb" onclick="hs()" disabled style="display:none;">🚀 Start</button><button id="giveUpBtn" onclick="GiveUp._click()" style="display:none;background:#ef4444;color:#fff;border:none;border-radius:10px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;">🏳️ Give Up</button></div>
 <div id="scores"></div>
 <div id="board-area">
 <div class="pl em" id="pt">waiting...</div><div class="pl em" id="plf"></div><div class="pl em" id="prt"></div><div class="pl me" id="pb">Me</div>
@@ -51,6 +52,13 @@ const SC=W/400,API=location.origin;
 const sp=new URLSearchParams(location.search).get('tgWebAppStartParam')||tg.initDataUnsafe?.start_param||'';
 const GID=sp.replace('carrom_','').replace(/_0_/g,':');
 async function rpc(m,p,b){try{const o={method:m,headers:{'X-Init-Data':tg.initData,'Content-Type':'application/json'}};if(b)o.body=JSON.stringify(b);const r=await fetch(API+p,o);const t=await r.text();try{return JSON.parse(t);}catch{return{ok:false,error:'Error'};}}catch{return{ok:false,error:'Network'};}}
+
+// Give Up: confirm popup then forfeit
+GiveUp.bind({
+    rpc: rpc, path: '/carrom/forfeit', gameId: GID, game: 'Carrom',
+    onState: (st)=>{ S=st; updateUI(); if(pollId&&S.status==='ended'){clearInterval(pollId);pollId=null;} },
+    onError: (m)=>{ document.getElementById('toast').textContent=m; }
+});
 
 // Physics constants — MUST match server
 const FR=0.992,MV=0.1,PAD=24,SZ=400;
@@ -172,12 +180,13 @@ el.r.textContent=ps[o2]?ci(ps[o2].color)+' '+ps[o2].name:'waiting...';el.r.class
 function updateUI(){if(!S)return;document.getElementById('cntb').textContent=S.players.length+'/4';
 const btn=document.getElementById('stb');
 if(S.status==='lobby'){btn.style.display=S.isHost?'':'none';btn.disabled=S.players.length<2;btn.textContent=S.players.length<2?'Need 2+':'🚀 Start';}else btn.style.display='none';
+const gub=document.getElementById('giveUpBtn');if(gub)gub.style.display=(S.inGame&&S.status!=='ended'&&S.status!=='lobby')?'':'none';
 let sc='';S.players.forEach((p,i)=>{sc+=`<span class="sc ${S.turn===i&&S.status==='playing'?'on':'off'}">${ci(p.color)} ${p.name}${p.isMe?' (You)':''}: <b>${p.score}</b></span>`;});
 if(S.status==='playing')sc+=`<span class="sc off">⚫${S.blackLeft} ⚪${S.whiteLeft}</span>`;
 document.getElementById('scores').innerHTML=sc;
 const ft=document.getElementById('foot'),sl=document.getElementById('swl');
 if(S.status==='lobby'){ft.textContent='Waiting (2-4 players)';sl.textContent='Not started';}
-else if(S.status==='ended'){document.getElementById('toast').textContent='🏆 '+(S.winnerPlayers||[]).join(' & ')+' win!';ft.textContent='Game over';sl.textContent='';}
+else if(S.status==='ended'){document.getElementById('toast').textContent=(S.forfeitedBy?'🏳️ '+S.forfeitedBy+' gave up — ':'')+'🏆 '+(S.winnerPlayers||[]).join(' & ')+' win!';ft.textContent='Game over';sl.textContent='';}
 else if(sim){ft.textContent='⏳ Moving...';sl.textContent='';}
 else if(S.isMyTurn){ft.textContent='▶️ Pull back from striker to shoot';sl.textContent='◀ Slide to position ▶';}
 else{ft.textContent='⏳ '+S.currentPlayer+"'s turn";sl.textContent='Watching...';}

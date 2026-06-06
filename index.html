@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Reward Center</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://js.onclckvd.com/in-stream-ad-admanager/tma.js"></script>
+    <!-- Normal display ads -->
+    <style>
+        :root {
+            --tg-bg: var(--tg-theme-bg-color, #0e1621);
+            --tg-text: var(--tg-theme-text-color, #ffffff);
+            --tg-hint: var(--tg-theme-hint-color, #708499);
+            --tg-button: var(--tg-theme-button-color, #2481cc);
+            --tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+            --tg-secondary: var(--tg-theme-secondary-bg-color, #17212b);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--tg-bg);
+            color: var(--tg-text);
+            margin: 0; padding: 15px;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh;
+        }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header h1 { font-size: 20px; margin: 0; }
+        .header p { font-size: 13px; color: var(--tg-hint); margin: 5px 0 0; }
+        .main-card {
+            width: 100%; background: var(--tg-secondary);
+            border-radius: 15px; padding: 20px; text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); margin-top: 10px;
+        }
+        .timer-display { font-size: 24px; font-weight: bold; color: var(--tg-button); margin: 15px 0; }
+        .progress-container { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; margin-bottom: 20px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--tg-button); width: 0%; transition: width 1s linear; }
+        .btn { width: 100%; padding: 15px; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        #start-btn { background-color: var(--tg-button); color: var(--tg-button-text); }
+        #claim-btn { background-color: #31b545; color: white; display: none; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>💎 Reward Center</h1>
+        <p>Stay on this page to verify and earn</p>
+    </div>
+    <!-- Banner ad -->
+
+    <div class="main-card">
+        <div id="status-text">Watch a short ad to claim your daily reward.</div>
+        <div id="timer-ui" style="display: none;">
+            <div class="timer-display" id="sec">30</div>
+            <div class="progress-container"><div id="progress" class="progress-fill"></div></div>
+            <p style="font-size: 12px; color: var(--tg-hint);">Verification in progress...</p>
+        </div>
+        <button id="start-btn" class="btn" onclick="startVerification()">🚀 Watch Ad & Earn</button>
+        <button id="claim-btn" class="btn" onclick="claim()">🎁 Claim Daily Reward</button>
+        <div id="result-view" style="display:none; margin-top:10px;">
+            <p id="result-msg"></p>
+        </div>
+    </div>
+    <script>
+        const webapp = window.Telegram.WebApp;
+        webapp.expand();
+        webapp.ready();
+
+        if (!webapp || !webapp.initData || !webapp.initDataUnsafe || !webapp.initDataUnsafe.user || !webapp.initDataUnsafe.user.id) {
+            document.body.innerHTML = `
+                <div style="padding:40px 20px; text-align:center; background:#0e1621; color:#fff; min-height:100vh;">
+                    <h1>🔒 Access Blocked</h1>
+                    <p>This page must be opened as Telegram Mini App from @Alexagamebot using /daily.</p>
+                </div>`;
+            throw new Error("Blocked no TG");
+        }
+
+        const API_BASE = window.location.origin;
+        const REWARD_SPOT_ID = "6120581";
+        let triggerRewardVideo = null;
+        let timeLeft = 30;
+        let timerStarted = false;
+
+        window.initCdTma?.({ id: REWARD_SPOT_ID })
+            .then(show => { triggerRewardVideo = show; })
+            .catch(err => console.error(err));
+
+        function startVerification() {
+            if (timerStarted) return;
+            if (!triggerRewardVideo) { alert("Ad loading, try again."); return; }
+
+            timerStarted = true;
+            document.getElementById('start-btn').disabled = true;
+            document.getElementById('start-btn').style.display = 'none';
+            document.getElementById('status-text').style.display = 'none';
+            document.getElementById('timer-ui').style.display = 'block';
+
+            triggerRewardVideo()
+                .then(() => {
+                    const countdown = setInterval(() => {
+                        timeLeft--;
+                        document.getElementById('sec').innerText = timeLeft;
+                        document.getElementById('progress').style.width = ((30 - timeLeft) / 30 * 100) + '%';
+                        if (timeLeft <= 0) {
+                            clearInterval(countdown);
+                            document.getElementById('timer-ui').style.display = 'none';
+                            document.getElementById('claim-btn').style.display = 'block';
+                        }
+                    }, 1000);
+                })
+                .catch(() => {
+                    timerStarted = false; timeLeft = 30;
+                    document.getElementById('timer-ui').style.display = 'none';
+                    document.getElementById('status-text').style.display = 'block';
+                    document.getElementById('start-btn').disabled = false;
+                    document.getElementById('start-btn').style.display = 'block';
+                });
+        }
+
+        // Init display ads
+
+        async function claim() {
+            document.getElementById('claim-btn').disabled = true;
+            document.getElementById('claim-btn').textContent = '⏳ Claiming...';
+            try {
+                const res = await fetch(`${API_BASE}/claim`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Init-Data': webapp.initData },
+                    body: JSON.stringify({ type: 'daily' })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    document.getElementById('claim-btn').style.display = 'none';
+                    document.getElementById('result-view').style.display = 'block';
+                    document.getElementById('result-msg').innerHTML = '✅ <strong>$3000</strong> added to your wallet!';
+                    if (webapp.HapticFeedback) webapp.HapticFeedback.notificationOccurred('success');
+                    setTimeout(() => webapp.close(), 3000);
+                } else {
+                    document.getElementById('result-view').style.display = 'block';
+                    document.getElementById('result-msg').textContent = '❌ ' + (data.error || 'Failed');
+                }
+            } catch(e) {
+                document.getElementById('result-view').style.display = 'block';
+                document.getElementById('result-msg').textContent = '❌ Network error';
+            }
+        }
+    </script>
+</body>
+</html>

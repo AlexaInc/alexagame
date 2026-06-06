@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlexaGame — New Card Deck Demo</title>
+<script src="cards-deck.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#0d1b2a;color:#fff;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:18px;}
+  h1{font-size:18px;margin-bottom:4px;}
+  h1 b{color:#f59e0b;}
+  p.sub{font-size:12px;color:#9aa7b5;margin-bottom:18px;}
+  h2{font-size:14px;margin:22px 0 8px;color:#f59e0b;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;}
+  /* mimic omi.html hand styles */
+  .card-wrap{cursor:pointer;transition:transform .2s;display:inline-block;border-radius:6px;}
+  .card-wrap:hover{transform:translateY(-6px) scale(1.03);}
+  .card-wrap.sel{transform:translateY(-10px);filter:drop-shadow(0 4px 12px rgba(245,158,11,.4));}
+  /* mimic cards.html hand styles */
+  .hcard-wrap{display:inline-block;border-radius:10px;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 2px 8px rgba(0,0,0,.25);}
+  .hcard-wrap:hover{transform:translateY(-8px) scale(1.05);}
+  .hcard-wrap.selected{transform:translateY(-12px);box-shadow:0 8px 25px rgba(245,158,11,.45);}
+  .table{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:14px;}
+  .name{font-size:9px;color:#9aa7b5;text-align:center;margin-top:3px;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+  <h1>🃏 AlexaGame — <b>New SVG Card Deck</b></h1>
+  <p class="sub">Full 52-card deck (proper pip layouts, framed court cards, suited backs) now used by <b>Omi</b> and the <b>Card Game</b>. This page renders the shared <code>cards-deck.js</code> exactly as the games do.</p>
+
+  <h2>Omi — your hand (7&ndash;A, all suits)</h2>
+  <div class="row" id="omiHand"></div>
+
+  <h2>Card Game — table trick</h2>
+  <div class="table"><div class="row" id="trick"></div></div>
+
+  <h2>Card Game — your hand (selectable)</h2>
+  <div class="row" id="cgHand"></div>
+
+  <h2>Court cards &amp; card backs</h2>
+  <div class="row" id="courts"></div>
+
+<script>
+  const D = window.CardsDeck;
+  const suits = ['♠','♥','♦','♣'];
+
+  // Omi hand: ranks 7..A
+  (function(){
+    const ranks = ['7','8','9','10','J','Q','K','A'];
+    let h='';
+    ranks.forEach((rk,i)=>{
+      const s = suits[i % 4];
+      h += `<div class="card-wrap ${i===3?'sel':''}">${D.getCardSVG(rk,s,{width:62,height:90})}</div>`;
+    });
+    document.getElementById('omiHand').innerHTML = h;
+  })();
+
+  // Card Game trick: a played row + a face-down
+  (function(){
+    const trick = [['A','♠','Alex'],['K','♥','Sam'],['10','♦','Mia']];
+    let h='';
+    trick.forEach(([rk,s,nm])=>{
+      h += `<div><div style="display:inline-block;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,.3)">${D.getCardSVG(rk,s,{width:70,height:102})}</div><div class="name">${nm}</div></div>`;
+    });
+    h += `<div><div style="display:inline-block;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,.3)">${D.getCardBackSVG({width:70,height:102})}</div><div class="name">waiting…</div></div>`;
+    document.getElementById('trick').innerHTML = h;
+  })();
+
+  // Card Game hand: 2..A sample, selectable
+  (function(){
+    const sample = [['2','♣'],['5','♦'],['7','♥'],['9','♠'],['J','♦'],['Q','♣'],['A','♥']];
+    let h='';
+    sample.forEach(([rk,s],i)=>{
+      h += `<div class="hcard-wrap" data-i="${i}">${D.getCardSVG(rk,s,{width:74,height:108})}</div>`;
+    });
+    const wrap = document.getElementById('cgHand');
+    wrap.innerHTML = h;
+    wrap.querySelectorAll('.hcard-wrap').forEach(el=>{
+      el.onclick = ()=>{ el.classList.toggle('selected'); };
+    });
+  })();
+
+  // Courts + backs
+  (function(){
+    let h='';
+    ['J','Q','K'].forEach((rk,i)=> h += `<div>${D.getCardSVG(rk,suits[i],{width:80,height:116})}</div>`);
+    h += `<div>${D.getCardBackSVG({width:80,height:116})}</div>`;
+    h += `<div>${D.getCardBackSVG({width:80,height:116,colour:'#7f1d1d',accent:'#ef4444'})}</div>`;
+    document.getElementById('courts').innerHTML = h;
+  })();
+</script>
+</body>
+</html>

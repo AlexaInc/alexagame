@@ -20,6 +20,7 @@ app.use(express.static(path.join(__dirname, 'webapp')));
 app.get('/carrom', (req, res) => res.sendFile(path.join(__dirname, 'webapp', 'carrom.html')));
 app.get('/cards', (req, res) => res.sendFile(path.join(__dirname, 'webapp', 'cards.html')));
 app.get('/omi', (req, res) => res.sendFile(path.join(__dirname, 'webapp', 'omi.html')));
+app.get('/deck-demo', (req, res) => res.sendFile(path.join(__dirname, 'webapp', 'deck-demo.html')));
 
 // ── Auth ──
 function verifyInitData(raw) {
@@ -198,6 +199,30 @@ app.post('/carrom/shoot', auth, async (req, res) => {
     } catch (err) { console.error('[API] carrom/shoot:', err.message); res.status(500).json({ ok: false, error: 'Error' }); }
 });
 
+app.post('/carrom/forfeit', auth, async (req, res) => {
+    try {
+        const { gameId } = req.body;
+        const sessions = require('./games/sessions');
+        const leveling = require('./utils/leveling');
+        const game = sessions.get(gameId);
+        if (!game?.forfeit) return res.json({ ok: false, error: 'Not found' });
+        const userId = req.tgUser.id.toString();
+        const wasPlaying = game.status === 'playing';
+        const r = game.forfeit(userId);
+        if (r.error) return res.json({ ok: false, error: r.error });
+        const quitter = game.forfeitedBy;
+        if (wasPlaying) {
+            const winners = game.getWinnerPlayers();
+            const pot = game.bet * game.players.length;
+            const share = winners.length ? Math.floor(pot / winners.length) : 0;
+            for (const w of winners) { let u = await User.findOne({userId:w.userId})||await User.create({userId:w.userId}); u.wallet+=share; await leveling.addXP(w.userId,100); await u.save(); }
+            if (global._tgClient && game.chatId) try { await global._tgClient.sendMessage(game.chatId, { message: `🏳️ <b>${quitter}</b> gave up! ${winners.map(w=>w.name).join(' & ')} win <b>$${pot}</b>!` }); } catch {}
+        }
+        setTimeout(() => sessions.delete(gameId), 3000);
+        res.json({ ok: true, state: game.getState(userId) });
+    } catch (err) { console.error('[API] carrom/forfeit:', err.message); res.status(500).json({ ok: false, error: 'Error' }); }
+});
+
 // ── Card Web Game API ──
 app.get('/wcards/state', auth, (req, res) => {
     try {
@@ -250,6 +275,29 @@ app.post('/wcards/next', auth, (req, res) => {
         game.nextRound();
         res.json({ ok: true, state: game.getState(req.tgUser.id.toString()) });
     } catch (err) { res.status(500).json({ ok: false, error: 'Error' }); }
+});
+
+app.post('/wcards/forfeit', auth, async (req, res) => {
+    try {
+        const sessions = require('./games/sessions');
+        const leveling = require('./utils/leveling');
+        const game = sessions.get(req.body.gameId);
+        if (!game?.forfeit) return res.json({ ok: false, error: 'Not found' });
+        const userId = req.tgUser.id.toString();
+        const wasPlaying = game.status === 'playing' || game.status === 'reveal';
+        const r = game.forfeit(userId);
+        if (r.error) return res.json({ ok: false, error: r.error });
+        const quitter = game.forfeitedBy;
+        if (wasPlaying) {
+            const winners = game.getWinners();
+            const pot = game.bet * game.players.length;
+            const share = winners.length ? Math.floor(pot / winners.length) : 0;
+            for (const w of winners) { let u = await User.findOne({userId:w.userId})||await User.create({userId:w.userId}); u.wallet+=share; await leveling.addXP(w.userId,75); await u.save(); }
+            if (global._tgClient && game.chatId) try { await global._tgClient.sendMessage(game.chatId, { message: `🏳️ <b>${quitter}</b> gave up! ${winners.map(w=>w.name).join(' & ')} win <b>$${pot}</b>!` }); } catch {}
+        }
+        setTimeout(() => sessions.delete(req.body.gameId), 4000);
+        res.json({ ok: true, state: game.getState(userId) });
+    } catch (err) { console.error('[API] wcards/forfeit:', err.message); res.status(500).json({ ok: false, error: 'Error' }); }
 });
 
 // ── Omi API ──
@@ -305,6 +353,29 @@ app.post('/omi/play', auth, async (req, res) => {
         }
         res.json({ ok: true, state: game.getState(req.tgUser.id.toString()) });
     } catch (err) { res.status(500).json({ ok: false, error: 'Error' }); }
+});
+
+app.post('/omi/forfeit', auth, async (req, res) => {
+    try {
+        const sessions = require('./games/sessions');
+        const leveling = require('./utils/leveling');
+        const game = sessions.get(req.body.gameId);
+        if (!game?.forfeit) return res.json({ ok: false, error: 'Not found' });
+        const userId = req.tgUser.id.toString();
+        const wasPlaying = game.status === 'playing' || game.status === 'chooseTrump';
+        const r = game.forfeit(userId);
+        if (r.error) return res.json({ ok: false, error: r.error });
+        const quitter = game.forfeitedBy;
+        if (wasPlaying) {
+            const winners = game.getWinners();
+            const pot = game.bet * game.players.length;
+            const share = winners.length ? Math.floor(pot / winners.length) : 0;
+            for (const w of winners) { let u = await User.findOne({userId:w.userId})||await User.create({userId:w.userId}); u.wallet+=share; await leveling.addXP(w.userId,75); await u.save(); }
+            if (global._tgClient && game.chatId) try { await global._tgClient.sendMessage(game.chatId, { message: `🏳️ <b>${quitter}</b> gave up! ${winners.map(w=>w.name).join(' & ')} win <b>$${pot}</b>!` }); } catch {}
+        }
+        setTimeout(() => sessions.delete(req.body.gameId), 4000);
+        res.json({ ok: true, state: game.getState(userId) });
+    } catch (err) { console.error('[API] omi/forfeit:', err.message); res.status(500).json({ ok: false, error: 'Error' }); }
 });
 
 // ── Start ──

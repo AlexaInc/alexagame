@@ -127,7 +127,17 @@ class CarromGame {
         if (scoredOwn > 0 && !foul) { /* keep turn */ } else { this.turn = (this.turn + 1) % this.players.length; }
         this.resetStriker();
     }
-    getWinner() { if (this.status !== 'ended') return null; if (9 - this.blackPocketed === 0) return 0; if (9 - this.whitePocketed === 0) return 1; let mx = -1, wi = 0; this.scores.forEach((s, i) => { if (s > mx) { mx = s; wi = i; } }); return this.getTeam(wi); }
+    // A player gives up; their opposing team wins.
+    forfeit(userId) {
+        if (this.status === 'ended') return { error: 'Game already ended' };
+        const qi = this.players.findIndex(p => p.userId === userId);
+        if (qi < 0) return { error: 'Not in this game' };
+        this.forfeitedBy = this.players[qi].name;
+        this.forfeitWinnerTeam = this.getTeam(qi) === 0 ? 1 : 0;
+        this.status = 'ended';
+        return { ok: true };
+    }
+    getWinner() { if (this.status !== 'ended') return null; if (this.forfeitWinnerTeam != null) return this.forfeitWinnerTeam; if (9 - this.blackPocketed === 0) return 0; if (9 - this.whitePocketed === 0) return 1; let mx = -1, wi = 0; this.scores.forEach((s, i) => { if (s > mx) { mx = s; wi = i; } }); return this.getTeam(wi); }
     getWinnerPlayers() { const wt = this.getWinner(); if (wt === null) return []; return this.players.filter((_, i) => this.getTeam(i) === wt); }
     getState(forUserId) {
         const pi = this.players.findIndex(p => p.userId === forUserId);
@@ -138,6 +148,7 @@ class CarromGame {
             striker: this.striker ? { x: this.striker.x, y: this.striker.y, r: this.striker.r, pocketed: this.striker.pocketed } : null,
             lastShot: this.lastShot, lastEvent: this.lastEvent, winner: this.status === 'ended' ? this.getWinner() : null,
             winnerPlayers: this.status === 'ended' ? this.getWinnerPlayers().map(p => p.name) : [],
+            forfeitedBy: this.forfeitedBy || null, inGame: pi >= 0,
             blackLeft: 9 - this.blackPocketed, whiteLeft: 9 - this.whitePocketed, queenPocketed: this.queenPocketed, size: this.size, pad: this.pad };
     }
 }

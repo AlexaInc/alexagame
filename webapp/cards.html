@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Card Game</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="cards-deck.js"></script>
+<script src="giveup.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#0a1628;color:#fff;font-family:-apple-system,sans-serif;min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;}
@@ -30,6 +32,10 @@ body{background:#0a1628;color:#fff;font-family:-apple-system,sans-serif;min-heig
 .tcard.faceup.red{color:#dc2626;}
 .tcard.faceup.winner{border-color:#f59e0b;box-shadow:0 0 20px rgba(245,158,11,.4);}
 .tcard-name{font-size:9px;color:#888;text-align:center;margin-top:2px;max-width:65px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* SVG card wrappers (table) */
+.tcard-wrap{display:inline-block;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,.3);transition:transform .3s,box-shadow .3s;animation:flipIn .4s ease;}
+.tcard-wrap svg{display:block;border-radius:8px;}
+.tcard-wrap.winner{box-shadow:0 0 20px rgba(245,158,11,.5);}
 @keyframes flipIn{0%{transform:rotateY(90deg) scale(.8);}100%{transform:rotateY(0) scale(1);}}
 /* Result banner */
 #result{display:none;text-align:center;padding:10px;font-size:14px;}
@@ -45,6 +51,12 @@ body{background:#0a1628;color:#fff;font-family:-apple-system,sans-serif;min-heig
 .hcard .hlabel{font-size:20px;font-weight:800;}
 .hcard.used{opacity:.25;cursor:default;transform:none !important;}
 .hcard.selected{transform:translateY(-12px);border-color:#f59e0b;box-shadow:0 8px 25px rgba(245,158,11,.3);}
+/* SVG card wrappers (hand) */
+.hcard-wrap{display:inline-block;border-radius:10px;cursor:pointer;transition:transform .2s,box-shadow .2s,opacity .2s;box-shadow:0 2px 8px rgba(0,0,0,.25);}
+.hcard-wrap svg{display:block;border-radius:10px;}
+.hcard-wrap:active{transform:translateY(-8px) scale(1.05);}
+.hcard-wrap.used{opacity:.25;cursor:default;transform:none !important;}
+.hcard-wrap.selected{transform:translateY(-12px);box-shadow:0 8px 25px rgba(245,158,11,.45);}
 /* Buttons */
 #actions{display:flex;justify-content:center;gap:8px;padding:6px;}
 .abtn{padding:10px 24px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;color:#fff;transition:.2s;}
@@ -79,6 +91,13 @@ const GID=sp.replace('wcards_','').replace(/_0_/g,':');
 async function rpc(m,p,b){try{const o={method:m,headers:{'X-Init-Data':tg.initData,'Content-Type':'application/json'}};if(b)o.body=JSON.stringify(b);const r=await fetch(API+p,o);return JSON.parse(await r.text());}catch{return{ok:false,error:'Network error'};}}
 
 let S=null,selectedCard=null,pollId=null;
+
+// Give Up: confirm popup then forfeit
+GiveUp.bind({
+    rpc: rpc, path: '/wcards/forfeit', gameId: GID, game: 'Card',
+    onState: (st)=>{ S=st; selectedCard=null; render(); if(pollId&&S.status==='ended'){clearInterval(pollId);pollId=null;} },
+    onError: (m)=>{ alert(m); }
+});
 
 function isRed(suit){return suit==='♥'||suit==='♦';}
 
@@ -130,11 +149,9 @@ function renderGame(){
     if(Object.keys(S.tablePlays).length>0){
         for(const [uid,play] of Object.entries(S.tablePlays)){
             if(play.faceUp){
-                const r=isRed(play.suit)?'red':'';
-                const isWin=S.lastResult?.winnerNames?.some(n=>true)||false; // simplified
-                tc+=`<div><div class="tcard faceup ${r}"><span class="tsuit">${play.suit}</span><span class="tlabel">${play.label}</span></div></div>`;
+                tc+=`<div class="tcard-wrap">${CardsDeck.getCardSVG(play.label,play.suit,{width:65,height:95})}</div>`;
             } else {
-                tc+=`<div><div class="tcard facedown"></div></div>`;
+                tc+=`<div class="tcard-wrap">${CardsDeck.getCardBackSVG({width:65,height:95})}</div>`;
             }
         }
     } else {
@@ -150,7 +167,8 @@ function renderGame(){
         res.innerHTML=`<b>Round ${S.lastResult.round}:</b> ${plays}<br>🏆 <b>${S.lastResult.winnerNames.join(', ')}</b> wins!`;
     } else if(S.status==='ended'&&S.winner){
         res.style.display='block';
-        res.innerHTML=`🏆 <b>GAME OVER!</b><br>${S.winner.join(' & ')} wins!`;
+        const gu=S.forfeitedBy?`🏳️ <b>${S.forfeitedBy}</b> gave up!<br>`:'';
+        res.innerHTML=`${gu}🏆 <b>GAME OVER!</b><br>${S.winner.join(' & ')} wins!`;
     } else { res.style.display='none'; }
 
     // Actions
@@ -161,16 +179,17 @@ function renderGame(){
     if(S.status==='reveal'){
         acts=`<button class="abtn blue" onclick="nextRound()">Next Round →</button>`;
     }
+    // Give Up — visible while the game is active and you're a participant
+    if(S.inGame && S.status!=='ended' && S.status!=='lobby') acts+=GiveUp.button();
     document.getElementById('actions').innerHTML=acts;
 
     // Hand
     let h='';
     if(S.myHand){
         S.myHand.forEach((c,i)=>{
-            const r=isRed(c.suit)?'red':'';
             const used=c.played?'used':'';
             const sel=selectedCard===i?'selected':'';
-            h+=`<div class="hcard ${r} ${used} ${sel}" onclick="selectCard(${i},${c.played})" data-i="${i}"><span class="hsuit">${c.suit}</span><span class="hlabel">${c.label}</span></div>`;
+            h+=`<div class="hcard-wrap ${used} ${sel}" onclick="selectCard(${i},${c.played})" data-i="${i}">${CardsDeck.getCardSVG(c.label,c.suit,{width:72,height:105})}</div>`;
         });
     }
     document.getElementById('hand').innerHTML=h;

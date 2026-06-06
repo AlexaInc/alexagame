@@ -121,7 +121,20 @@ class WebCardGame {
         }
     }
 
+    // A player gives up; the remaining players win regardless of score.
+    forfeit(userId) {
+        if (this.status === 'ended') return { error: 'Game already ended' };
+        const quitter = this.players.find(p => p.userId === userId);
+        if (!quitter) return { error: 'Not in this game' };
+        this.forfeitedBy = quitter.name;
+        this.forfeitWinners = this.players.filter(p => p.userId !== userId);
+        this.status = 'ended';
+        return { ok: true };
+    }
+
     getWinners() {
+        // If a player gave up, the rest win.
+        if (this.forfeitWinners) return this.forfeitWinners;
         let maxScore = -1, winners = [];
         for (const p of this.players) {
             const s = this.scores[p.userId] || 0;
@@ -177,6 +190,8 @@ class WebCardGame {
             isHost: this.hostId === forUserId,
             winner: this.status === 'ended' ? this.getWinners().map(p => p.name) : null,
             playerCount: this.players.length,
+            forfeitedBy: this.forfeitedBy || null,
+            inGame: this.players.some(p => p.userId === forUserId),
         };
     }
 }
